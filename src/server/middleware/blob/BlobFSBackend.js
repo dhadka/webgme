@@ -14,7 +14,8 @@ var fs = require('fs'),
     GUID = requireJS('common/util/guid'),
 
     ensureDir = require('../../util/ensureDir'),
-    BlobBackendBase = require('./BlobBackendBase');
+    BlobBackendBase = require('./BlobBackendBase'),
+    BlobError = require('./BlobError');
 
 var BlobFSBackend = function (gmeConfig) {
     BlobBackendBase.call(this);
@@ -30,7 +31,8 @@ BlobFSBackend.prototype.constructor = BlobFSBackend;
 BlobFSBackend.prototype.putObject = function (readStream, bucket, callback) {
     // TODO generate a GUID or something for the temporary filename to allow parallel functioning
     var self = this,
-        tempName = path.join(self.blobDir, self.tempBucket, GUID() + '.tbf'),// TODO: create this in the system temp folder
+    // TODO: create this in the system temp folder
+        tempName = path.join(self.blobDir, self.tempBucket, GUID() + '.tbf'),
         shasum = crypto.createHash(this.shaMethod),
         size = 0;
 
@@ -52,7 +54,7 @@ BlobFSBackend.prototype.putObject = function (readStream, bucket, callback) {
             ensureDir(path.dirname(objectFilename), function (err) {
                 if (err) {
                     // FIXME: this code has to be reviewed.
-                    fs.unlink(tempName, function (e) {
+                    fs.unlink(tempName, function (/*e*/) {
                         callback(err);
                     });
                     return;
@@ -100,7 +102,7 @@ BlobFSBackend.prototype.getObject = function (hash, writeStream, bucket, callbac
 
     fs.lstat(filename, function (err, stat) {
         if ((err && err.code === 'ENOENT') || !stat.isFile()) {
-            return callback('Requested object does not exist: ' + hash); // FIXME: make the request have status 404
+            return callback(new BlobError('Requested object does not exist: ' + hash, 404));
         } else if (err) {
             return callback('getObject error: ' + err.code || 'unknown');
         }
@@ -185,11 +187,12 @@ BlobFSBackend.prototype._readDir = function (start, callback) {
         // Read through all the files in this directory
         if (stat.isDirectory()) {
             fs.readdir(start, function (err, files) {
+                var x, l;
                 total = files.length;
                 if (total === 0) {
                     callback(null, found);
                 }
-                for (var x = 0, l = files.length; x < l; x++) {
+                for (x = 0, l = files.length; x < l; x++) {
                     isDir(path.join(start, files[x]));
                 }
             });

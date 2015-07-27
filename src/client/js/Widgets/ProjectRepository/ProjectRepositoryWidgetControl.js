@@ -1,22 +1,27 @@
 /*globals define, _, WebGMEGlobal*/
+/*jshint browser: true*/
+
+/**
+ * @author rkereskenyi / https://github.com/rkereskenyi
+ * @author nabana / https://github.com/nabana
+ */
 
 define(['js/logger'], function (Logger) {
-
-    "use strict";
+    'use strict';
 
     var RepositoryLogControl;
 
     RepositoryLogControl = function (myClient, myView) {
         var self = this;
 
-        this._client = myClient;
-        this._view = myView;
+        self._client = myClient;
+        self._view = myView;
 
-        this._lastCommitID = null;
+        self._lastCommitID = null;
 
         //override view event handlers
-        this._view.onLoadCommit = function (params) {
-            self._client.selectCommitAsync(params.id, function (err) {
+        self._view.onLoadCommit = function (params) {
+            self._client.selectCommit(params.id, function (err) {
                 if (err) {
                     self._logger.error(err);
                 }
@@ -25,8 +30,9 @@ define(['js/logger'], function (Logger) {
             });
         };
 
-        this._view.onDeleteBranchClick = function (branch) {
-            self._client.deleteBranchAsync(branch, function (err) {
+        self._view.onDeleteBranchClick = function (branchName, oldHash) {
+            var projectName = self._client.getActiveProjectId();
+            self._client.deleteBranch(projectName, branchName, oldHash, function (err) {
                 if (err) {
                     self._logger.error(err);
                 }
@@ -36,8 +42,10 @@ define(['js/logger'], function (Logger) {
             });
         };
 
-        this._view.onCreateBranchFromCommit = function (params) {
-            self._client.createBranchAsync(
+        self._view.onCreateBranchFromCommit = function (params) {
+            var projectName = self._client.getActiveProjectId();
+            self._client.createBranch(
+                projectName,
                 params.name,
                 params.commitId,
                 function (err) {
@@ -48,27 +56,28 @@ define(['js/logger'], function (Logger) {
                 });
         };
 
-        this._view.onLoadMoreCommits = function (num) {
+        self._view.onLoadMoreCommits = function (num) {
             self._loadMoreCommits(num);
         };
 
-        this._logger = Logger.create(
+        self._logger = Logger.create(
             'gme:Widgets:ProjectRepository:ProjectRepositoryWidgetControl_RepositoryLogControl',
             WebGMEGlobal.gmeConfig.client.log);
-        this._logger.debug("Created");
+        self._logger.debug('Created');
     };
 
     RepositoryLogControl.prototype._loadMoreCommits = function (num) {
-        var commits = null,
+        var self = this,
+            commits = null,
             com,
-            commitsLoaded,
-            self = this;
+            commitsLoaded;
 
         commitsLoaded = function (err, data) {
             var i,
-                cLen;
+                cLen,
+                commitObject;
 
-            self._logger.debug("commitsLoaded, err: '" + err + "', data: " + data === true ? data.length : "null");
+            self._logger.debug('commitsLoaded, err: \'' + err + '\', data: ' + data === true ? data.length : 'null');
 
             if (err) {
                 if (_.isEmpty(err)) {
@@ -86,11 +95,13 @@ define(['js/logger'], function (Logger) {
 
                         if (self._lastCommitID !== com._id) {
 
-                            var commitObject = {"id": com._id,
-                                "message": com.message,
-                                "parents": com.parents,
-                                "timestamp": com.time,
-                                "user": com.updater.join(',')};
+                            commitObject = {
+                                id: com._id,
+                                message: com.message,
+                                parents: com.parents,
+                                timestamp: com.time,
+                                user: com.updater.join(',')
+                            };
 
                             self._view.addCommit(commitObject);
                         }
@@ -115,37 +126,41 @@ define(['js/logger'], function (Logger) {
             }
         };
 
-        this._view.showProgressbar();
+        self._view.showProgressbar();
 
-        this._client.getCommitsAsync(this._lastCommitID,num,commitsLoaded);
+        self._client.getCommits(self._client.getActiveProjectId(),
+            this._lastCommitID || (new Date()).getTime() + 1,
+            num,
+            commitsLoaded);
     };
 
     RepositoryLogControl.prototype._refreshActualCommit = function () {
-        this._view.setActualCommitId(this._client.getActualCommit());
+        this._view.setActualCommitId(this._client.getActiveCommitHash());
     };
 
     RepositoryLogControl.prototype._refreshBranches = function () {
-        var self = this;
+        var self = this,
+            projectName = self._client.getActiveProjectId();
 
-        this._view.clearBranches();
+        self._view.clearBranches();
 
-        this._client.getBranchesAsync(function (err, data) {
-            var i;
+        self._client.getBranches(projectName, function (err, data) {
+            var i,
+                branchNames;
 
-            self._logger.debug("branchesLoaded, err: '" + err + "', data: " + data ? data.length : "null");
+            self._logger.debug('getBranches: err, data: ', err, data);
 
             if (err) {
                 self._logger.error(err);
+                return;
             }
-            if (data && data.length) {
-                //set view's branch info
-                i = data.length;
-
-                while (i--) {
-                    self._view.addBranch({"name": data[i].name,
-                        "commitId":  data[i].commitId,
-                        "sync":  data[i].sync});
-                }
+            branchNames = Object.keys(data);
+            for (i = 0; i < branchNames.length; i += 1) {
+                self._view.addBranch({
+                    name: branchNames[i],
+                    commitId: data[branchNames[i]],
+                    sync: true, //data[i].sync TODO: does this matter?
+                });
             }
         });
     };

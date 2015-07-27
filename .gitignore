@@ -5,6 +5,7 @@ bin
 */.settings
 */.idea
 *.class
+*csproj.user
 
 node_modules
 
@@ -24,7 +25,7 @@ src/bin/stdout.log
 src/bin/decorators.js
 src/bin/*.xme
 
-/src-cov
+/report
 /coverage
 # ignore file system blob storage files
 blob-local-storage
@@ -32,8 +33,12 @@ blob-local-storage
 config/config.dev*.js
 
 *.swp
+*~
 
 webgme-*.tgz
 
+executor-temp/
 jobList.nedb
 workerList.nedb
+
+docs/source/

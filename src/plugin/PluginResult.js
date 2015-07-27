@@ -1,10 +1,15 @@
+/*globals define*/
+/*jshint browser: true, node:true*/
+
 /**
- * Created by zsolt on 3/20/14.
+ * A module representing a PluginResult.
+ *
+ * @module PluginResult
+ * @author lattmann / https://github.com/lattmann
  */
 
-'use strict';
 define(['plugin/PluginMessage'], function (PluginMessage) {
-
+    'use strict';
     /**
      * Initializes a new instance of a plugin result object.
      *
@@ -12,8 +17,11 @@ define(['plugin/PluginMessage'], function (PluginMessage) {
      *
      * @param config - deserializes an existing configuration to this object.
      * @constructor
+     * @alias PluginResult
      */
     var PluginResult = function (config) {
+        var pluginMessage,
+            i;
         if (config) {
             this.success = config.success;
             this.pluginName = config.pluginName;
@@ -22,9 +30,9 @@ define(['plugin/PluginMessage'], function (PluginMessage) {
             this.messages = [];
             this.artifacts = config.artifacts;
             this.error = config.error;
+            this.commits = config.commits;
 
-            for (var i = 0; i < config.messages.length; i += 1) {
-                var pluginMessage;
+            for (i = 0; i < config.messages.length; i += 1) {
                 if (config.messages[i] instanceof PluginMessage) {
                     pluginMessage = config.messages[i];
                 } else {
@@ -40,6 +48,7 @@ define(['plugin/PluginMessage'], function (PluginMessage) {
             this.startTime = null;
             this.finishTime = null;
             this.error = null;
+            this.commits = [];
         }
     };
 
@@ -85,6 +94,17 @@ define(['plugin/PluginMessage'], function (PluginMessage) {
 
     PluginResult.prototype.addArtifact = function (hash) {
         this.artifacts.push(hash);
+    };
+
+    /**
+     *
+     * @param {object} commitData
+     * @param {string} commitData.commitHash - hash of the commit.
+     * @param {string} commitData.status - storage.constants./SYNCED/FORKED/MERGED
+     * @param {string} commitData.branchName - name of branch that got updated with the commitHash.
+     */
+    PluginResult.prototype.addCommit = function (commitData) {
+        this.commits.push(commitData);
     };
 
     /**
@@ -171,14 +191,16 @@ define(['plugin/PluginMessage'], function (PluginMessage) {
         var result = {
             success: this.success,
             messages: [],
+            commits: this.commits,
             artifacts: this.artifacts,
             pluginName: this.pluginName,
             startTime: this.startTime,
             finishTime: this.finishTime,
             error: this.error
-        };
+        },
+            i;
 
-        for (var i = 0; i < this.messages.length; i += 1) {
+        for (i = 0; i < this.messages.length; i += 1) {
             result.messages.push(this.messages[i].serialize());
         }
 

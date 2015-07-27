@@ -1,12 +1,16 @@
-/*
- * Copyright (C) 2014 Vanderbilt University, All rights reserved.
+/*globals define*/
+/*jshint browser: true, node:true*/
+
+/**
+ * A module representing a PluginNodeDescription.
  *
- * Author: Zsolt Lattmann
+ * @module PluginNodeDescription
+ * @author lattmann / https://github.com/lattmann
  */
 
-'use strict';
-define([], function () {
 
+define([], function () {
+    'use strict';
     /**
      * Initializes a new instance of plugin node description object.
      *
@@ -14,6 +18,7 @@ define([], function () {
      *
      * @param config - deserializes an existing configuration to this object.
      * @constructor
+     * @alias PluginNodeDescription
      */
     var PluginNodeDescription = function (config) {
         if (config) {
@@ -30,11 +35,12 @@ define([], function () {
      *
      * @returns {{}}
      */
-    PluginNodeDescription.prototype.serialize = function() {
-        var keys = Object.keys(this);
-        var result = {};
+    PluginNodeDescription.prototype.serialize = function () {
+        var keys = Object.keys(this),
+            result = {},
+            i;
 
-        for (var i = 0; i < keys.length; i += 1) {
+        for (i = 0; i < keys.length; i += 1) {
             // TODO: check for type on serialization
             result[keys[i]] = this[keys[i]];
         }

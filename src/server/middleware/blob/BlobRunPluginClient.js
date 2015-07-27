@@ -12,6 +12,7 @@
 var BlobClient = requireJS('blob/BlobClient'),
     BlobMetadata = requireJS('blob/BlobMetadata'),
 
+    BufferStreamReader = require('../../util/BufferStreamReader'),
     StringStreamWriter = require('../../util/StringStreamWriter');
 
 /**
@@ -42,14 +43,14 @@ BlobRunPluginClient.prototype.getMetadata = function (metadataHash, callback) {
 
 };
 
-BlobRunPluginClient.prototype.getObject = function (metadataHash, callback) {
+BlobRunPluginClient.prototype.getObject = function (metadataHash, callback, subpath) {
     var self = this;
     var writeStream = new StringStreamWriter();
 
     // TODO: we need to get the content and save as a local file.
     // if we just proxy the stream we cannot set errors correctly.
 
-    self.blobBackend.getFile(metadataHash, '', writeStream, function (err /*, hash*/) {
+    self.blobBackend.getFile(metadataHash, subpath || '', writeStream, function (err /*, hash*/) {
         if (err) {
             callback(err);
             return;
@@ -71,6 +72,10 @@ BlobRunPluginClient.prototype.putMetadata = function (metadataDescriptor, callba
 
 
 BlobRunPluginClient.prototype.putFile = function (name, data, callback) {
+
+    if (Buffer.isBuffer(data)) {
+        data = new BufferStreamReader(data);
+    }
 
     this.blobBackend.putFile(name, data, function (err, hash) {
         if (err) {

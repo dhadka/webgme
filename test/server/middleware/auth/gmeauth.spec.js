@@ -14,6 +14,7 @@ describe('GME authentication', function () {
     var gmeConfig = testFixture.getGmeConfig(),
         GMEAuth = testFixture.GMEAuth,
         mongodb = testFixture.mongodb,
+        expect = testFixture.expect,
         Q = testFixture.Q,
 
         auth,
@@ -26,7 +27,7 @@ describe('GME authentication', function () {
         dbConn = Q.ninvoke(mongodb.MongoClient, 'connect', gmeConfig.mongo.uri, gmeConfig.mongo.options)
             .then(function (db_) {
                 db = db_;
-                return Q.all([
+                return Q.allSettled([
                     Q.ninvoke(db, 'collection', '_users')
                         .then(function (collection_) {
                             var collection = collection_;
@@ -58,6 +59,9 @@ describe('GME authentication', function () {
             });
 
         dbConn
+            .then(function () {
+                return auth.connect();
+            })
             .then(function () {
                 return auth.addUser('user', 'user@example.com', 'plaintext', true, {overwrite: true});
             })
@@ -96,7 +100,15 @@ describe('GME authentication', function () {
 
 
     it('adds random user without overwrite', function (done) {
-        auth.addUser('no_overwrite_user' + (new Date()).toISOString(), 'no_overwrite_user@example.com', 'plaintext', true, {overwrite: false}, done);
+        var username = 'no_overwrite_user' + (new Date()).toISOString();
+        auth.addUser(username, username + '@example.com', 'plaintext', true, {overwrite: false})
+            .then(function () {
+                return auth.getUser(username);
+            })
+            .then(function (userData) {
+                expect(userData._id).equal(username);
+            })
+            .nodeify(done);
     });
 
     it('adds user without overwrite', function (done) {
@@ -264,7 +276,7 @@ describe('GME authentication', function () {
     it('removes user by id', function (done) {
         auth.addUser('user_to_remove', 'user_to_remove@example.com', 'plaintext', true, {overwrite: true}).
             then(function () {
-                return auth.removeUserByUserId('user_to_remove');
+                return auth.deleteUser('user_to_remove');
             })
             .nodeify(done);
     });
@@ -362,11 +374,15 @@ describe('GME authentication', function () {
     it('should auth with a new token', function (done) {
         auth.generateTokenForUserId('user')
             .then(function (tokenId) {
-                return Q.all([auth.tokenAuthorization(tokenId, 'project'),
+                return Q.allSettled([auth.tokenAuthorization(tokenId, 'project'),
                     auth.tokenAuthorization(tokenId, 'unauthorized_project'),
                     auth.tokenAuthorization(tokenId, 'doesnt_exist_project')]);
             }).then(function (authorized) {
-                authorized.should.deep.equal([true, false, false]);
+                authorized.should.deep.equal([
+                    {state: 'fulfilled', value: true},
+                    {state: 'fulfilled', value: false},
+                    {state: 'fulfilled', value: false}
+                ]);
             }).nodeify(done);
     });
 
@@ -408,6 +424,30 @@ describe('GME authentication', function () {
                 return auth.getOrganization(orgName);
             }).then(function (org) {
                 org.users.should.deep.equal(['user']);
+            }).nodeify(done);
+    });
+
+    it('should be able to list organization', function (done) {
+        var orgName = 'org1',
+            otherOrgName = 'otherOrgName';
+        Q.allSettled([
+            auth.addOrganization(orgName),
+            auth.addOrganization(otherOrgName)
+        ])
+            .then(function () {
+                return auth.listOrganizations({});
+            }).then(function (organizations) {
+                var expectedResult = [
+                    {
+                        _id: orgName,
+                        projects: {}
+                    },
+                    {
+                        _id: otherOrgName,
+                        projects: {}
+                    }
+                ];
+                expect(organizations).to.deep.equal(expectedResult);
             }).nodeify(done);
     });
 

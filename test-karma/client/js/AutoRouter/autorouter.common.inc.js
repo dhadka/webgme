@@ -1,23 +1,27 @@
-/*globals require*/
+/*globals define*/
 /*jshint node:true, mocha:true*/
 /**
  * @author brollb / https://github.com/brollb
  */
 
-define(['js/Widgets/DiagramDesigner/AutoRouter', 'common/util/assert'], function (AutoRouter, assert) {
+define(['js/Widgets/DiagramDesigner/AutoRouter', 
+        'js/Widgets/DiagramDesigner/AutoRouter.PointList',
+        'js/Widgets/DiagramDesigner/AutoRouter.Point',
+        'common/util/assert'], function (AutoRouter, 
+                                         PointList,
+                                         Point,
+                                         assert) {
     'use strict';
     var router;
 
     // Set up helpers
     var getNewGraph = function () {
-        'use strict';
 
         router = new AutoRouter();
         return router;
     };
 
     var connectAll = function (boxes) {
-        'use strict';
 
         var i,
             j;
@@ -32,7 +36,6 @@ define(['js/Widgets/DiagramDesigner/AutoRouter', 'common/util/assert'], function
     };
 
     var addBox = function (options) {
-        'use strict';
 
         var x = options.x,
             y = options.y,
@@ -58,7 +61,6 @@ define(['js/Widgets/DiagramDesigner/AutoRouter', 'common/util/assert'], function
     };
 
     var addBoxes = function (locations) {
-        'use strict';
         var boxes = [],
             i;
 
@@ -73,13 +75,11 @@ define(['js/Widgets/DiagramDesigner/AutoRouter', 'common/util/assert'], function
     };
 
     var getBoxCount = function () {
-        'use strict';
         return Object.keys(router.graph.boxes).length;
     };
 
 // Validation Helpers
     var evaluateEdges = function (edges, fn) {
-        'use strict';
         var edge = edges.orderFirst,
             result = false;
 
@@ -92,8 +92,7 @@ define(['js/Widgets/DiagramDesigner/AutoRouter', 'common/util/assert'], function
     };
 
 // WebGME misc test helpers
-    var webgme_helpers = (function () {
-        'use strict';
+    var webgmeHelper = (function () {
         var addPorts = function (box) {
                 box.ports = [
                     {
@@ -173,6 +172,14 @@ define(['js/Widgets/DiagramDesigner/AutoRouter', 'common/util/assert'], function
 
     })();
 
+    var validatePoints = function(points) {
+        points = points.map(function(pt) {
+            return new Point(pt);
+        });
+
+        PointList.prototype.assertValid.call(points);
+    };
+
     return {
         getNewGraph: getNewGraph,
         addBox: addBox,
@@ -181,6 +188,8 @@ define(['js/Widgets/DiagramDesigner/AutoRouter', 'common/util/assert'], function
         getBoxCount: getBoxCount,
         evaluateEdges: evaluateEdges,
         assert: assert,
-        webgme: webgme_helpers
+        webgme: webgmeHelper,
+
+        validatePoints: validatePoints
     };
 });

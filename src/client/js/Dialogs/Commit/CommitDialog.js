@@ -1,5 +1,5 @@
-/*globals define, WebGMEGlobal*/
-
+/*globals define, WebGMEGlobal, $ */
+/*jshint browser: true*/
 /**
  * @author rkereskenyi / https://github.com/rkereskenyi
  * @author nabana / https://github.com/nabana
@@ -10,10 +10,9 @@ define([
     'text!./templates/CommitDialog.html',
     'css!./styles/CommitDialog.css'
 ], function (Logger,
-        commitDialogTemplate) {
+             commitDialogTemplate) {
 
-    "use strict";
-
+    'use strict';
 
     var CommitDialog;
 
@@ -22,7 +21,7 @@ define([
 
         this._client = client;
 
-        this._logger.debug("Created");
+        this._logger.debug('Created');
     };
 
     CommitDialog.prototype.show = function () {
@@ -45,7 +44,7 @@ define([
 
     CommitDialog.prototype._initDialog = function () {
         var self = this,
-            actualBranchName = this._client.getActualBranch();
+            actualBranchName = this._client.getActiveBranchName();
 
         this._dialog = $(commitDialogTemplate);
 
@@ -82,11 +81,12 @@ define([
 
         this._btnCommit.on('click', function () {
             var val = self._txtMessage.val();
-            if (val !== "") {
+            if (val !== '') {
                 self._btnCommit.off('click').hide();
-                self._client.commitAsync({"message": val}, function () {
-                    self._dialog.modal('hide');
-                });
+                self._logger.error('TODO: Make commit not supported/implemented.');
+                //self._client.commitAsync({message: val}, function () {
+                //    self._dialog.modal('hide');
+                //});
             }
         });
     };

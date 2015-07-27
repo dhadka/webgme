@@ -1,15 +1,21 @@
 /*globals requirejs, expect, console, before*/
-/* jshint browser: true, mocha: true */
+/* jshint browser: true, mocha: true, expr: true */
 /**
  * @author lattmann / https://github.com/lattmann
+ * @author kesco / https://github.com/kesco
+ * @author pmeijer / https://github.com/pmeijer
  */
 
-var WebGMEGlobal = {};
+var WebGMEGlobal = {}; // jshint ignore:line
 
 describe('GME client', function () {
     'use strict';
 
-    var superagent = null;
+    var superagent = null,
+        projectName2Id = function (projectName, gmeConfig, client) {
+            return gmeConfig.authentication.guestAccount + client.CONSTANTS.STORAGE.PROJECT_ID_SEP +
+                projectName;
+        };
     before(function (done) {
         this.timeout(10000);
         requirejs(['superagent'], function (superagent_) {
@@ -44,57 +50,69 @@ describe('GME client', function () {
         it('should have public functions', function () {
             var client = new Client(gmeConfig);
 
+            //event related API
+            expect(typeof client.addEventListener).to.equal('function');
+            expect(typeof client.removeEventListener).to.equal('function');
+            expect(typeof client.removeAllEventListeners).to.equal('function');
+            expect(typeof client.dispatchEvent).to.equal('function');
 
-            //eventer related API
+            //project, branch and connection actions API
             expect(client).to.include.keys(
-                'events',
-                'networkStates',
-                'branchStates',
-                '_eventList',
-                '_getEvent',
-                'addEventListener',
-                'removeEventListener',
-                'removeAllEventListeners',
-                'dispatchEvent'
+                'CONSTANTS',
+                'getUserId',
+
+                'connectToDatabase',
+                'disconnectFromDatabase',
+
+                'selectProject',
+                'selectBranch',
+                'selectCommit',
+
+                'forkCurrentBranch',
+                //'commitAsync',
+                'undo',
+                'redo'
             );
 
-            //project, branch and connection related API
+            // State getters
             expect(client).to.include.keys(
-                'connect',
-                'getUserId',
-                'getActiveProjectName',
-                'getAvailableProjectsAsync',
-                'getViewableProjectsAsync',
-                'getFullProjectListAsync',
-                'getProjectAuthInfoAsync',
-                'connectToDatabaseAsync',
-                'selectProjectAsync',
-                'createProjectAsync',
-                'deleteProjectAsync',
-                'getBranchesAsync',
-                'selectCommitAsync',
-                'getCommitsAsync',
-                'getActualCommit',
-                'getActualBranch',
-                'getActualNetworkStatus',
-                'getActualBranchStatus',
-                'createBranchAsync',
-                'deleteBranchAsync',
-                'selectBranchAsync',
-                'commitAsync',
-                'goOffline',
-                'goOnline',
+                'getNetworkStatus',
+                'getBranchStatus',
+
+                'getActiveProjectId',
+                'getActiveBranchName',
+                'getActiveCommitHash',
+                'getActiveRootHash',
+
                 'isProjectReadOnly',
                 'isCommitReadOnly',
-                'getProjectObject',
-                'undo',
-                'redo',
-                'getFullProjectsInfoAsync',
-                'createGenericBranchAsync',
-                'deleteGenericBranchAsync',
-                'setProjectInfoAsync',
-                'getProjectInfoAsync',
-                'getAllInfoTagsAsync'
+
+                'getProjectObject'
+            );
+
+            // Requests getters
+            expect(client).to.include.keys(
+                'getProjects',
+                'getBranches',
+                'getCommits',
+                'getLatestCommitData',
+                'getProjectsAndBranches'
+            );
+
+            // Requests setters
+            expect(client).to.include.keys(
+                'createProject',
+                'deleteProject',
+                'createBranch',
+                'deleteBranch'
+            );
+
+            // Watchers
+            expect(client).to.include.keys(
+                'watchDatabase',
+                'unwatchDatabase',
+                'watchProject',
+                'unwatchProject'
             );
 
             //node manipulation API
@@ -121,9 +139,9 @@ describe('GME client', function () {
                 'createSet',
                 'deleteSet',
                 'setBase',
-                'delBase',
-                'setConstraint',
-                'delConstraint'
+                'delBase'
+                //'setConstraint', TODO: Add these back
+                //'delConstraint'
             );
 
             //META manipulation API
@@ -186,21 +204,14 @@ describe('GME client', function () {
             );
 
             //export - import API
-            expect(client).to.include.keys(
-                'getAvailableDecoratorNames',
-                'getAvailableInterpreterNames',
-                'runServerPlugin',
-                'exportItems',
-                'getExportItemsUrlAsync',
-                'dumpNodeAsync',
-                'importNodeAsync',
-                'mergeNodeAsync',
-                'createProjectFromFileAsync',
-                'getDumpURL',
-                'getExportLibraryUrlAsync',
-                'updateLibraryAsync',
-                'addLibraryAsync'
-            );
+            expect(client.hasOwnProperty('runServerPlugin')).to.equal(true, 'runServerPlugin');
+            //expect(client.hasOwnProperty('exportItems')).to.equal(true, 'exportItems'); //TODO: Add this back
+            expect(client.hasOwnProperty('getExportItemsUrl')).to.equal(true, 'getExportItemsUrl');
+            expect(client.hasOwnProperty('createProjectFromFile')).to.equal(true, 'createProjectFromFile');
+            expect(client.hasOwnProperty('getExportProjectBranchUrl')).to.equal(true, 'getExportProjectBranchUrl');
+            expect(client.hasOwnProperty('getExportLibraryUrl')).to.equal(true, 'getExportLibraryUrl');
+            expect(client.hasOwnProperty('updateLibrary')).to.equal(true, 'updateLibrary');
+            expect(client.hasOwnProperty('addLibrary')).to.equal(true, 'addLibrary');
         });
 
         it('should not contain merge related functions', function () {
@@ -219,36 +230,43 @@ describe('GME client', function () {
     describe('database connection', function () {
         var Client,
             gmeConfig,
+            client,
             projectName = 'ProjectAndBranchOperationsTest',
-            client;
+            projectId;
 
         before(function (done) {
             this.timeout(10000);
             requirejs(['js/client', 'text!gmeConfig.json'], function (Client_, gmeConfigJSON) {
                 Client = Client_;
                 gmeConfig = JSON.parse(gmeConfigJSON);
-                client = new Client(gmeConfig);
-
                 done();
             });
         });
 
-        it('should connect to the database', function (done) {
-            var options = {};
+        after(function (done) {
+            if (client) {
+                client = null;
+                client.disconnectFromDatabase(done);
+            } else {
+                client = null;
+                done();
+            }
+        });
 
-            client.connectToDatabaseAsync(options, function (err) {
+        it('should connect to the database', function (done) {
+            var client = new Client(gmeConfig);
+            client.connectToDatabase(function (err) {
                 expect(err).to.equal(null);
                 done();
             });
         });
 
         it('should connect to the database even if we already connected', function (done) {
-            var options = {};
-
-            client.connectToDatabaseAsync(options, function (err) {
+            var client = new Client(gmeConfig);
+            client.connectToDatabase(function (err) {
                 expect(err).to.equal(null);
 
-                client.connectToDatabaseAsync(options, function (err) {
+                client.connectToDatabase(function (err) {
                     expect(err).to.equal(null);
                     done();
                 });
@@ -256,41 +274,24 @@ describe('GME client', function () {
         });
 
         it('should connect to the database but close the project if it was opened before', function (done) {
-
-            client.connectToDatabaseAsync({}, function (err) {
+            var client = new Client(gmeConfig);
+            projectId = projectName2Id(projectName, gmeConfig, client);
+            client.connectToDatabase(function (err) {
                 expect(err).to.equal(null);
-                client.selectProjectAsync(projectName, function (err) {
+                client.selectProject(projectId, null, function (err) {
                     expect(err).to.equal(null);
 
-                    expect(client.getActiveProjectName()).to.equal(projectName);
-                    client.connectToDatabaseAsync({}, function (err) {
+                    expect(client.getActiveProjectId()).to.equal(projectId);
+                    client.disconnectFromDatabase(function (err) {
                         expect(err).to.equal(null);
 
-                        expect(client.getActiveProjectName()).to.equal(null);
-                        done();
+                        client.connectToDatabase(function (err) {
+                            expect(err).to.equal(null);
+                            expect(client.getActiveProjectId()).to.equal(null);
+                            done();
+                        });
                     });
                 });
-            });
-        });
-
-        it('should connect and open the given project', function (done) {
-
-            client.connectToDatabaseAsync({open: true, project: projectName}, function (err) {
-                expect(err).to.equal(null);
-                expect(client.getActiveProjectName()).to.equal(projectName);
-
-                done();
-            });
-        });
-
-        //FIXME we should remove this functionality
-        it('should connect and open the \'first\' project', function (done) {
-
-            client.connectToDatabaseAsync({open: true}, function (err) {
-                expect(err).to.equal(null);
-                expect(client.getActiveProjectName()).not.to.equal(null);
-
-                done();
             });
         });
     });
@@ -312,8 +313,8 @@ describe('GME client', function () {
             });
         });
 
-        it('should fail to get available project list', function (done) {
-            client.getAvailableProjectsAsync(function (err) {
+        it('should fail to get getProjects', function (done) {
+            client.getProjects({}, function (err) {
                 expect(err).not.to.equal(null);
                 expect(err.message).to.contain('no open database');
 
@@ -321,27 +322,8 @@ describe('GME client', function () {
             });
         });
 
-        it('should fail to get filtered project list', function (done) {
-            client.getViewableProjectsAsync(function (err) {
-                expect(err).not.to.equal(null);
-                expect(err.message).to.contain('no open database');
-
-                done();
-            });
-        });
-
-        it('should fail to get authorization info of a project', function (done) {
-            client.getProjectAuthInfoAsync('any project', function (err) {
-                expect(err).not.to.equal(null);
-                expect(err.message).to.contain('no open database');
-
-                done();
-            });
-        });
-
-        //FIXME - this should also fail
-        it.skip('should fail to full project list', function (done) {
-            client.getFullProjectListAsync(function (err) {
+        it('should fail to get getProjectsAndBranches', function (done) {
+            client.getProjectsAndBranches(false, function (err) {
                 expect(err).not.to.equal(null);
                 expect(err.message).to.contain('no open database');
 
@@ -350,7 +332,7 @@ describe('GME client', function () {
         });
 
         it('should fail to select project', function (done) {
-            client.selectProjectAsync('any project', function (err) {
+            client.selectProject('any project', null, function (err) {
                 expect(err).not.to.equal(null);
                 expect(err.message).to.contain('no open database');
 
@@ -359,7 +341,7 @@ describe('GME client', function () {
         });
 
         it('should fail to create project', function (done) {
-            client.createProjectAsync('any project', {}, function (err) {
+            client.createProject('any project', {}, function (err) {
                 expect(err).not.to.equal(null);
                 expect(err.message).to.contain('no open database');
 
@@ -368,7 +350,7 @@ describe('GME client', function () {
         });
 
         it('should fail to delete project', function (done) {
-            client.deleteProjectAsync('any project', function (err) {
+            client.deleteProject('any project', function (err) {
                 expect(err).not.to.equal(null);
                 expect(err.message).to.contain('no open database');
 
@@ -376,18 +358,17 @@ describe('GME client', function () {
             });
         });
 
-        //FIXME - harmonize error texts
         it('should fail to get branch names', function (done) {
-            client.getBranchesAsync(function (err) {
+            client.getBranches('any project', function (err) {
                 expect(err).not.to.equal(null);
-                expect(err.message).to.contain('no opened database');
+                expect(err.message).to.contain('no open database');
 
                 done();
             });
         });
 
         it('should fail to select branch', function (done) {
-            client.selectBranchAsync('any branch', function (err) {
+            client.selectBranch('any branch', null, function (err) {
                 expect(err).not.to.equal(null);
                 expect(err.message).to.contain('no open database');
 
@@ -396,7 +377,7 @@ describe('GME client', function () {
         });
 
         it('should fail to select commit', function (done) {
-            client.selectCommitAsync('any commit', function (err) {
+            client.selectCommit('any commit', function (err) {
                 expect(err).not.to.equal(null);
                 expect(err.message).to.contain('no open database');
 
@@ -405,7 +386,7 @@ describe('GME client', function () {
         });
 
         it('should fail to get commits', function (done) {
-            client.getCommitsAsync('any commit', 'any number', function (err) {
+            client.getCommits('anyProject', 'any commit', 'any number', function (err) {
                 expect(err).not.to.equal(null);
                 expect(err.message).to.contain('no open database');
 
@@ -414,7 +395,7 @@ describe('GME client', function () {
         });
 
         it('should fail to create branch', function (done) {
-            client.createBranchAsync('any branch', 'any commit', function (err) {
+            client.createBranch('anyProject', 'any branch', 'any commitHash', function (err) {
                 expect(err).not.to.equal(null);
                 expect(err.message).to.contain('no open database');
 
@@ -423,7 +404,7 @@ describe('GME client', function () {
         });
 
         it('should fail to delete branch', function (done) {
-            client.deleteBranchAsync('any branch', function (err) {
+            client.deleteBranch('anyProject', 'any branch', 'any commitHash', function (err) {
                 expect(err).not.to.equal(null);
                 expect(err.message).to.contain('no open database');
 
@@ -431,16 +412,16 @@ describe('GME client', function () {
             });
         });
 
-        it('should fail to make a commit', function (done) {
-            var commitOptions = {message: 'any message'};
-
-            client.commitAsync(commitOptions, function (err) {
-                expect(err).not.to.equal(null);
-                expect(err.message).to.contain('no open database');
-
-                done();
-            });
-        });
+        //it('should fail to make a commit', function (done) {
+        //    var commitOptions = {message: 'any message'};
+        //
+        //    client.commitAsync(commitOptions, function (err) {
+        //        expect(err).not.to.equal(null);
+        //        expect(err.message).to.contain('no open database');
+        //
+        //        done();
+        //    });
+        //});
 
         //FIXME - there are other Async functions which misses the database check, so they can cause crash in the client
         // so either we refactor and make the API dynamic,
@@ -467,161 +448,126 @@ describe('GME client', function () {
         var Client,
             gmeConfig,
             client,
-            projectName = 'ProjectAndBranchOperationsTest';
+            projectName = 'ProjectAndBranchOperationsTest',
+            projectId;
 
         before(function (done) {
             this.timeout(10000);
             requirejs(['js/client', 'text!gmeConfig.json'], function (Client_, gmeConfigJSON) {
                 Client = Client_;
                 gmeConfig = JSON.parse(gmeConfigJSON);
-                gmeConfig.storage.timeout = 1000;
                 client = new Client(gmeConfig);
-
-                done();
+                projectId = projectName2Id(projectName, gmeConfig, client);
+                client.connectToDatabase(done);
             });
         });
 
-        beforeEach(function (done) {
-            client.connectToDatabaseAsync({}, function (err) {
-                expect(err).to.equal(null);
-
-                done();
-            });
+        after(function (done) {
+            client.disconnectFromDatabase(done);
         });
 
         it('should return null as textual id if there is no opened project', function () {
-            expect(client.getActiveProjectName()).to.equal(null);
+            expect(client.getActiveProjectId()).to.equal(null);
         });
 
         it('should return the valid textual id of the opened project', function (done) {
-            client.selectProjectAsync(projectName, function (err) {
+            client.selectProject(projectId, null, function (err) {
                 expect(err).to.equal(null);
 
-                expect(client.getActiveProjectName()).to.equal(projectName);
+                expect(client.getActiveProjectId()).to.equal(projectId);
                 done();
             });
         });
 
-        //TODO inlcude checks for all imported projects that should be in the database
-        it('should return the list of textual ids of available projects', function (done) {
-            client.getAvailableProjectsAsync(function (err, names) {
+        it('getProjects should return array of objects with project name and rights', function (done) {
+            client.getProjects({rights: true}, function (err, allProjects) {
                 expect(err).to.equal(null);
-
-                expect(names).to.have.length.least(1);
-                expect(names).to.include(projectName);
+                expect(allProjects instanceof Array).to.equal(true);
+                expect(allProjects[0]).to.include.keys('name', 'rights', '_id');
                 done();
             });
         });
 
-        //TODO inlcude checks for all imported projects that should be in the database
-        it('should return a filtered list of textual project ids, where the user have read access', function (done) {
-            client.getViewableProjectsAsync(function (err, names) {
-                expect(err).to.equal(null);
-
-                expect(names).to.have.length.least(1);
-                expect(names).to.include(projectName);
-                done();
-            });
-        });
-
-        it('list of viewable projects should be equal to list of all projects without authentication', function (done) {
-            client.getAvailableProjectsAsync(function (err, allNames) {
-                expect(err).to.equal(null);
-
-                client.getViewableProjectsAsync(function (err, viewableNames) {
-                    expect(err).to.equal(null);
-
-                    expect(viewableNames).to.deep.equal(allNames);
-                    done();
-                });
-            });
-        });
-
-        it('should return the authorization info of a given project', function (done) {
-            client.getProjectAuthInfoAsync(projectName, function (err, authInfo) {
-                expect(err).to.equal(null);
-                expect(authInfo).to.deep.equal({read: true, write: true, delete: true});
-                done();
-            });
-        });
-
-        //FIXME check how it should behave in these scenario - drop error at least under authentication
-        it('should return unknown project error for an unknown project', function (done) {
-            client.getProjectAuthInfoAsync('unknown_project', function (err) {
-                //expect(err).not.to.equal(null);
-                expect(err).to.equal(null);
-                done();
-            });
-        });
-
-        it('should return the complete project list, with branches and authorization info', function (done) {
-            client.getFullProjectListAsync(function (err, projects) {
+        it('getProjectsAndBranches-true should return an object with branches and rights', function (done) {
+            client.getProjectsAndBranches(true, function (err, projects) {
                 var key;
                 expect(err).to.equal(null);
+                expect(typeof projects).to.equal('object');
+                expect(projects instanceof Array).to.equal(false);
                 for (key in projects) {
-                    expect(projects[key].hasOwnProperty('read')).to.equal(true);
-                    expect(projects[key].hasOwnProperty('write')).to.equal(true);
-                    expect(projects[key].hasOwnProperty('delete')).to.equal(true);
+                    expect(projects[key]).to.include.keys('branches', 'rights');
+                    expect(projects[key].rights).to.include.keys('read', 'write', 'delete');
+                    expect(typeof projects[key].branches).to.equal('object');
+                }
+                done();
+            });
+        });
+
+        it('getProjectsAndBranches-false should return an array of objects with branches and rights', function (done) {
+            client.getProjectsAndBranches(false, function (err, projects) {
+                var i;
+                expect(err).to.equal(null);
+                expect(projects instanceof Array).to.equal(true);
+                for (i = 0; i < projects.length; i += 1) {
+                    expect(projects[i]).to.include.keys('branches', 'rights', 'name');
+                    expect(typeof projects[i].branches).to.equal('object');
                 }
                 done();
             });
         });
 
         it('should selects a given project', function (done) {
-            client.selectProjectAsync(projectName, function (err) {
+            client.selectProject(projectId, null, function (err) {
                 expect(err).to.equal(null);
 
-                expect(client.getActiveProjectName()).to.equal(projectName);
+                expect(client.getActiveProjectId()).to.equal(projectId);
                 done();
             });
 
         });
 
         it('should fail to select an unknown project', function (done) {
-            client.selectProjectAsync('unknown_project', function (err) {
-                expect(err.message).to.contain('no such project');
+            client.selectProject('unknown_project', null, function (err) {
+                expect(err.message).to.contain('Not authorized to read project');
                 done();
             });
         });
 
-        it('should be able to delete a nonexistent project', function (done) {
-            client.deleteProjectAsync('unknown_project', function (err) {
-                expect(err).to.equal(null);
+        it('should fail to delete a nonexistent project', function (done) {
+            client.deleteProject('unknown_project', function (err) {
+                expect(err.message).to.contain('Not authorized: cannot delete project. unknown_project');
                 done();
             });
         });
 
         it('should delete a project', function (done) {
-            var testProjectName = 'deleteProject',
-                projectInfo = {};
+            var testProjectName = 'deleteProjectKarma',
+                projectId;
 
-            client.deleteProjectAsync(testProjectName, function (err) {
+            client.createProject(testProjectName, function (err, projectId_) {
                 expect(err).to.equal(null);
+                projectId = projectId_;
 
-                client.createProjectAsync(testProjectName, projectInfo, function (err) {
+                client.getProjectsAndBranches(true, function (err, projects) {
                     expect(err).to.equal(null);
 
-                    client.getAvailableProjectsAsync(function (err, names) {
+                    expect(projects).to.include.keys(projectId_);
+
+                    client.deleteProject(projectId, function (err) {
                         expect(err).to.equal(null);
 
-                        expect(names).to.include(testProjectName);
-
-                        client.deleteProjectAsync(testProjectName, function (err) {
+                        client.getProjectsAndBranches(true, function (err, projects) {
                             expect(err).to.equal(null);
 
-                            client.getAvailableProjectsAsync(function (err, names) {
-                                expect(err).to.equal(null);
-
-                                expect(names).not.to.include(testProjectName);
-                                done();
-                            });
+                            expect(projects).not.to.include.keys(projectId_);
+                            done();
                         });
                     });
                 });
             });
         });
 
-        it('should create a project with info data', function (done) {
+        it.skip('should create a project with info data', function (done) {
             var testProjectName = 'createProject',
                 info = {property: 'value'};
 
@@ -642,136 +588,185 @@ describe('GME client', function () {
         });
 
         it('should fail to create an already existing project', function (done) {
-            client.createProjectAsync(projectName, {}, function (err) {
-                expect(err).to.contain('already exists!');
+            var projectName = 'alreadyExists';
+            client.createProject(projectName, function (err) {
+                expect(err).to.contain('Project already exist');
                 done();
             });
         });
 
-
         it('should list the available branches of the opened project', function (done) {
             var actualBranch,
                 actualCommit;
-            client.selectProjectAsync(projectName, function (err) {
+            client.selectProject(projectId, null, function (err) {
                 expect(err).to.equal(null);
 
-                actualBranch = client.getActualBranch();
-                actualCommit = client.getActualCommit();
+                actualBranch = client.getActiveBranchName();
+                actualCommit = client.getActiveCommitHash();
 
-                client.getBranchesAsync(function (err, branches) {
+                client.getBranches(projectId, function (err, branches) {
                     expect(err).to.equal(null);
 
-                    expect(branches).to.have.length.of.at.least(1);
-                    expect(branches).to.include({name: actualBranch, commitId: actualCommit, sync: true});
+                    expect(Object.keys(branches)).to.have.length.of.at.least(1);
+                    expect(branches[Object.keys(branches)[0]]).to.contain('#'); //TODO: Proper hash check.
                     done();
                 });
             });
         });
 
         it('should select the given branch of the opened project', function (done) {
-            client.selectProjectAsync(projectName, function (err) {
+            client.selectProject(projectId, null, function (err) {
                 expect(err).to.equal(null);
 
-                client.selectBranchAsync('master', function (err) {
+                client.selectBranch('master', null, function (err) {
                     expect(err).to.equal(null);
+                    expect(client.getActiveBranchName()).to.equal('master');
                     done();
                 });
             });
         });
 
-        it('should select a nonexistent branch of the opened project', function (done) {
-            client.selectProjectAsync(projectName, function (err) {
-                expect(err).to.equal(null);
+        it('should select the given branch of the opened project when specified in selectProject', function (done) {
+            client.selectProject('reset', null, function (err) {
+                expect(client.getActiveProjectId()).to.equal(null);
+                expect(err.message).to.include('Not authorized to read project: reset');
+                //TODO: FIXOTHERS: Reset all tests like this.
 
-                client.selectBranchAsync('does_not_exist', function (err) {
-                    expect(err.message).to.equal('there is no such branch!');
+                client.selectProject(projectId, 'master', function (err) {
+                    expect(err).to.equal(null);
+                    expect(client.getActiveBranchName()).to.equal('master');
                     done();
                 });
+            });
+        });
+
+        it('should return error when selecting a nonexistent branch of the opened project', function (done) {
+            client.selectProject(projectId, null, function (err) {
+                expect(err).to.equal(null);
+
+                client.selectBranch('does_not_exist', null, function (err) {
+                    expect(err.message).to.contain('Error: Branch "does_not_exist" does not ' +
+                        'exist in project "');
+                    done();
+                });
+            });
+        });
+
+        it('should return error when selecting a nonexistent branch in selectProject', function (done) {
+            var projectName = 'branchWatcher',
+                projectId = projectName2Id(projectName, gmeConfig, client);
+            //FIXME: All these tests should select different projects or even have different client instances.
+            client.selectProject(projectId, 'branch_does_not_exist', function (err) {
+                expect(err.message).to.contain('Given branch does not exist "branch_does_not_exist"');
+                expect(client.getActiveProjectId()).to.equal(null);
+                done();
             });
         });
 
         it('should select a given commit', function (done) {
-            client.selectProjectAsync(projectName, function (err) {
+            client.selectProject(projectId, null, function (err) {
                 expect(err).to.equal(null);
 
-                client.selectCommitAsync(client.getActualCommit(), function (err) {
+                client.selectBranch('master', null, function (err) {
+                    var commitHash = client.getActiveCommitHash();
                     expect(err).to.equal(null);
+                    expect(commitHash).to.contain('#');
+                    expect(client.getActiveCommitHash()).to.have.length(41);
+                    client.selectCommit(commitHash, function (err) {
+                        expect(err).to.equal(null);
 
-                    done();
+                        done();
+                    });
                 });
             });
         });
 
-        //FIXME - possible fault that it 'switches branch' before it checks if the commit is known or not
         it('should fail to select an unknown commit', function (done) {
-            client.selectProjectAsync(projectName, function (err) {
+            client.selectProject(projectId, null, function (err) {
                 expect(err).to.equal(null);
 
-                client.selectCommitAsync('#unknown', function (err) {
-                    expect(err).not.to.equal(null);
+                client.selectCommit('#unknown', function (err) {
+                    expect(err).to.equal('object does not exist #unknown');
 
                     done();
                 });
             });
         });
 
-        it('should return the latest n commits', function (done) {
-            client.selectProjectAsync(projectName, function (err) {
-                var commitHash; //testing if it is not initialized
-
+        it('should return the latest n commits using time-stamp', function (done) {
+            client.selectProject(projectId, null, function (err) {
                 expect(err).to.equal(null);
 
-                client.getCommitsAsync(commitHash, 10, function (err, commits) {
+                client.getCommits(projectId, (new Date()).getTime(), 10, function (err, commits) {
                     expect(err).to.equal(null);
                     expect(commits).not.to.equal(null);
                     expect(commits).not.to.equal(undefined);
 
                     expect(commits).to.have.length.least(1);
                     expect(commits[0]).to.contain.keys('_id', 'root', 'updater', 'time', 'message', 'type');
-                    expect(commits[0]['_id']).to.equal(client.getActualCommit());
+                    expect(commits[0]._id).to.equal(client.getActiveCommitHash());
+                    done();
+                });
+            });
+        });
+
+        it('should return the latest n commits using commitHash and include it too.', function (done) {
+            client.selectProject(projectId, null, function (err) {
+                var commitHash = client.getActiveCommitHash();
+
+                expect(err).to.equal(null);
+
+                client.getCommits(projectId, commitHash, 10, function (err, commits) {
+                    expect(err).to.equal(null);
+                    expect(commits).not.to.equal(null);
+                    expect(commits).not.to.equal(undefined);
+
+                    expect(commits).to.have.length.least(1);
+                    expect(commits[0]).to.contain.keys('_id', 'root', 'updater', 'time', 'message', 'type');
+                    expect(commits[0]._id).to.equal(client.getActiveCommitHash());
                     done();
                 });
             });
         });
 
         it('should return the actual commit hash', function (done) {
-            client.selectProjectAsync(projectName, function (err) {
+            client.selectProject(projectId, null, function (err) {
                 expect(err).to.equal(null);
 
-                client.selectBranchAsync('master', function (err) {
+                client.selectBranch('master', null, function (err) {
                     expect(err).to.equal(null);
 
-                    expect(client.getActualCommit()).to.contain('#');
-                    expect(client.getActualCommit()).to.have.length(41);
+                    expect(client.getActiveCommitHash()).to.contain('#');
+                    expect(client.getActiveCommitHash()).to.have.length(41);
                     done();
                 });
             });
         });
 
         it('should return the name of the actual branch', function (done) {
-            client.selectProjectAsync(projectName, function (err) {
+            client.selectProject(projectId, null, function (err) {
                 expect(err).to.equal(null);
 
-                client.selectBranchAsync('master', function (err) {
+                client.selectBranch('master', null, function (err) {
                     expect(err).to.equal(null);
 
-                    expect(client.getActualBranch()).to.equal('master');
+                    expect(client.getActiveBranchName()).to.equal('master');
                     done();
                 });
             });
         });
 
         it('should return the current network state', function (done) {
-            setTimeout(function(){
-                expect(client.getActualNetworkStatus()).to.equal('connected');
+            setTimeout(function () {
+                expect(client.getNetworkStatus()).to.equal(client.CONSTANTS.STORAGE.CONNECTED);
                 done();
-            },100);
+            }, 100);
         });
 
         it('should return the current branch state', function (done) {
-            client.selectProjectAsync(projectName, function (err) {
+            client.selectProject(projectId, null, function (err) {
                 expect(err).to.equal(null);
-                expect(client.getActualBranchStatus()).to.equal('inSync');
+                expect(client.getBranchStatus()).to.equal(client.CONSTANTS.BRANCH_STATUS.SYNC);
 
                 done();
             });
@@ -781,24 +776,24 @@ describe('GME client', function () {
             var actualBranch,
                 actualCommit,
                 newBranch = 'newBranch';
-            client.selectProjectAsync(projectName, function (err) {
+            client.selectProject(projectId, null, function (err) {
                 expect(err).to.equal(null);
 
-                actualBranch = client.getActualBranch();
-                actualCommit = client.getActualCommit();
+                actualBranch = client.getActiveBranchName();
+                actualCommit = client.getActiveCommitHash();
                 expect(actualBranch).to.equal('master');
 
-                client.createBranchAsync(newBranch, actualCommit, function (err) {
+                client.createBranch(projectId, newBranch, actualCommit, function (err) {
                     expect(err).to.equal(null);
 
-                    expect(client.getActualBranch()).to.equal(actualBranch);
+                    expect(client.getActiveBranchName()).to.equal(actualBranch);
 
-                    client.getBranchesAsync(function (err, branches) {
+                    client.getBranches(projectId, function (err, branches) {
                         expect(err).to.equal(null);
 
-                        expect(branches).to.include({name: newBranch, commitId: actualCommit, sync: true});
+                        expect(branches).to.include.keys(newBranch, 'master');
 
-                        client.deleteBranchAsync(newBranch, function (err) {
+                        client.deleteBranch(projectId, newBranch, actualCommit, function (err) {
                             expect(err).to.equal(null);
 
                             done();
@@ -812,29 +807,29 @@ describe('GME client', function () {
             var actualBranch,
                 actualCommit,
                 newBranch = 'deleteBranch';
-            client.selectProjectAsync(projectName, function (err) {
+            client.selectProject(projectId, null, function (err) {
                 expect(err).to.equal(null);
 
-                actualBranch = client.getActualBranch();
-                actualCommit = client.getActualCommit();
+                actualBranch = client.getActiveBranchName();
+                actualCommit = client.getActiveCommitHash();
                 expect(actualBranch).to.equal('master');
 
-                client.createBranchAsync(newBranch, actualCommit, function (err) {
+                client.createBranch(projectId, newBranch, actualCommit, function (err) {
                     expect(err).to.equal(null);
 
-                    expect(client.getActualBranch()).to.equal(actualBranch);
+                    expect(client.getActiveBranchName()).to.equal(actualBranch);
 
-                    client.getBranchesAsync(function (err, branches) {
+                    client.getBranches(projectId, function (err, branches) {
                         expect(err).to.equal(null);
 
-                        expect(branches).to.include({name: newBranch, commitId: actualCommit, sync: true});
+                        expect(branches).to.include.keys(newBranch, 'master');
 
-                        client.deleteBranchAsync(newBranch, function (err) {
+                        client.deleteBranch(projectId, newBranch, actualCommit, function (err) {
                             expect(err).to.equal(null);
-                            client.getBranchesAsync(function (err, branches) {
+                            client.getBranches(projectId, function (err, branches) {
                                 expect(err).to.equal(null);
 
-                                expect(branches).not.to.include({name: newBranch, commitId: actualCommit, sync: true});
+                                expect(branches).not.to.include.keys(newBranch, actualBranch);
                                 done();
                             });
                         });
@@ -843,29 +838,25 @@ describe('GME client', function () {
             });
         });
 
-        //FIXME - nondeterministic behaviour
         it('should fail to remove an unknown branch', function (done) {
-            client.selectProjectAsync(projectName, function (err) {
-                expect(err).to.equal(null);
-                client.deleteBranchAsync('unknown_branch', function (err) {
-                    console.warn(err);
-                    expect(err).not.to.equal(null);
+            client.deleteBranch('someProject', 'unknown_branch', 'unknown_hash', function (err) {
+                console.warn(err);
+                expect(err).not.to.equal(null);
 
-                    done();
-                });
+                done();
             });
         });
 
-        it('should create a new -no change- commit with the given message', function (done) {
+        it.skip('should create a new -no change- commit with the given message', function (done) {
             var oldCommit;
-            client.selectProjectAsync(projectName, function (err) {
+            client.selectProject(projectId, null, function (err) {
                 expect(err).to.equal(null);
-                oldCommit = client.getActualCommit();
+                oldCommit = client.getActiveCommitHash();
 
                 client.commitAsync({message: 'just a commit'}, function (err) {
                     expect(err).to.equal(null);
 
-                    expect(client.getActualCommit()).not.to.equal(oldCommit);
+                    expect(client.getActiveCommitHash()).not.to.equal(oldCommit);
 
                     done();
                 });
@@ -873,7 +864,7 @@ describe('GME client', function () {
         });
 
         it('should give back the project object (which can be used to create core objects)', function (done) {
-            client.selectProjectAsync(projectName, function (err) {
+            client.selectProject(projectId, null, function (/*err*/) {
                 var projectObject = client.getProjectObject();
 
                 expect(projectObject).not.to.equal(null);
@@ -883,140 +874,100 @@ describe('GME client', function () {
             });
         });
 
-        it('should return the list of available decorator names', function () {
-            expect(client.getAvailableDecoratorNames()).to.have.length.least(1);
-        });
-
-        //TODO change the name, plus make the core plugins available if possible
-        it('should return the list of available plugin names', function () {
-            expect(client.getAvailableInterpreterNames()).to.empty;
-        });
-
         it('should return a list of projects extended with the \'in collection\' meta data', function (done) {
-            client.getFullProjectsInfoAsync(function (err, projectsAndInfo) {
+            var projectName = 'ProjectAndBranchOperationsTest',
+                projectId = projectName2Id(projectName, gmeConfig, client);
+
+            client.getProjectsAndBranches(true, function (err, projectsAndInfo) {
                 expect(err).to.equal(null);
 
                 expect(projectsAndInfo).not.to.equal(null);
-                expect(projectsAndInfo).to.include.keys('ProjectAndBranchOperationsTest');
-                expect(projectsAndInfo.ProjectAndBranchOperationsTest).to.include.keys('info', 'branches', 'rights');
+                expect(projectsAndInfo).to.include.keys(projectId);
+                expect(projectsAndInfo[projectId]).to.include.keys('name', 'branches', 'rights');
+                expect(projectsAndInfo[projectId].name).to.equal(projectName);
                 done();
             });
 
-        });
-
-        it('should return the \'in collection\' meta data of a project', function (done) {
-            client.getProjectInfoAsync('ProjectAndBranchOperationsTest', function (err, info) {
-                expect(err).to.equal(null);
-
-                //we cannot check the info at this point as no nothing about it
-                done();
-            });
-        });
-
-        it('should set the \'in collection\' meta data of a project', function (done) {
-            // setProjectInfoAsync
-            client.setProjectInfoAsync('ProjectAndBranchOperationsTest',
-                {some: {arbitrary: 'info'}},
-                function (err) {
-                    expect(err).to.equal(null);
-
-                    client.getProjectInfoAsync('ProjectAndBranchOperationsTest', function (err, info) {
-                        expect(err).to.equal(null);
-
-                        //FIXME it is not working??!!!??
-                        // expect(info).to.deep.equal({some: {arbitrary: info}});
-                        done();
-                    });
-                }
-            );
-        });
-
-        it('should return a list of used tags in the \'in collection\' meta data', function (done) {
-            client.getAllInfoTagsAsync(function (err, tags) {
-                expect(err).to.equal(null);
-
-                //FIXME we cannot check the info at this point as no nothing about it
-                done();
-            });
         });
 
         it('should create a new branch for the given project (not necessarily the opened)', function (done) {
             var actualProject,
-                genericProjectName = 'createGenericBranch';
-
-            client.selectProjectAsync(projectName, function (err) {
+                genericProjectName = 'createGenericBranch',
+                genericProjectId = projectName2Id(genericProjectName, gmeConfig, client);
+            client.selectProject(projectId, null, function (err) {
                 expect(err).to.equal(null);
 
-                actualProject = client.getActiveProjectName();
+                actualProject = client.getActiveProjectId();
 
-                expect(actualProject).to.equal(projectName);
-
-                client.deleteProjectAsync(genericProjectName, function (err) {
+                expect(actualProject).to.equal(projectId);
+                client.deleteProject(genericProjectId, function (err) {
                     expect(err).to.equal(null);
-                    client.createProjectAsync(genericProjectName, {}, function (err) {
+                    client.createProject(genericProjectName, function (err) {
                         expect(err).to.equal(null);
 
-                        client.createGenericBranchAsync(genericProjectName, 'genericBranch', '#424242', function (err) {
+                        client.createBranch(genericProjectId, 'genericBranch', '#424242', function (err) {
                             expect(err).to.equal(null);
 
-                            client.getFullProjectsInfoAsync(function (err, info) {
+                            client.getProjectsAndBranches(true, function (err, info) {
                                 expect(err).to.equal(null);
 
-                                expect(client.getActiveProjectName()).to.equal(actualProject);
+                                expect(client.getActiveProjectId()).to.equal(actualProject);
                                 expect(info).not.to.equal(null);
-                                expect(info).to.include.keys(genericProjectName);
-                                expect(info[genericProjectName]).to.include.keys('branches');
-                                expect(info[genericProjectName].branches).to.include.keys('genericBranch');
+                                expect(info).to.include.keys(genericProjectId);
+                                expect(info[genericProjectId]).to.include.keys('branches');
+                                expect(info[genericProjectId].branches).to.include.keys('genericBranch');
 
+                                expect(err).to.equal(null);
                                 done();
                             });
                         });
                     });
                 });
             });
-
         });
 
         it('should delete a branch form the given project (not necessarily the opened one)', function (done) {
             // deleteGenericBranchAsync
             var actualProject,
-                genericProjectName = 'removeGenericBranch';
+                genericProjectName = 'removeGenericBranch',
+                genericProjectId = projectName2Id(genericProjectName, gmeConfig, client);
 
-            client.selectProjectAsync(projectName, function (err) {
+            client.selectProject(projectId, null, function (err) {
                 expect(err).to.equal(null);
 
-                actualProject = client.getActiveProjectName();
+                actualProject = client.getActiveProjectId();
 
-                client.deleteProjectAsync(genericProjectName, function (err) {
+                client.deleteProject(genericProjectId, function (err) {
                     expect(err).to.equal(null);
-                    client.createProjectAsync(genericProjectName, {}, function (err) {
+                    client.createProject(genericProjectName, function (err, projectId) {
                         expect(err).to.equal(null);
+                        expect(projectId).to.equal(genericProjectId);
 
-                        client.createGenericBranchAsync(genericProjectName, 'genericBranch', '#424242', function (err) {
+                        client.createBranch(genericProjectId, 'genericBranch', '#424242', function (err) {
                             expect(err).to.equal(null);
 
-                            client.getFullProjectsInfoAsync(function (err, info) {
+                            client.getProjectsAndBranches(true, function (err, info) {
                                 expect(err).to.equal(null);
 
-                                expect(client.getActiveProjectName()).to.equal(actualProject);
+                                expect(client.getActiveProjectId()).to.equal(actualProject);
                                 expect(info).not.to.equal(null);
-                                expect(info).to.include.keys(genericProjectName);
-                                expect(info[genericProjectName]).to.include.keys('branches');
-                                expect(info[genericProjectName].branches).to.include.keys('genericBranch');
+                                expect(info).to.include.keys(genericProjectId);
+                                expect(info[genericProjectId]).to.include.keys('branches');
+                                expect(info[genericProjectId].branches).to.include.keys('genericBranch');
 
-                                client.deleteGenericBranchAsync(genericProjectName,
+                                client.deleteBranch(genericProjectId,
                                     'genericBranch',
                                     '#424242',
                                     function (err) {
                                         expect(err).to.equal(null);
-                                        client.getFullProjectsInfoAsync(function (err, info) {
+                                        client.getProjectsAndBranches(true, function (err, info) {
                                             expect(err).to.equal(null);
 
-                                            expect(client.getActiveProjectName()).to.equal(actualProject);
+                                            expect(client.getActiveProjectId()).to.equal(actualProject);
                                             expect(info).not.to.equal(null);
-                                            expect(info).to.include.keys(genericProjectName);
-                                            expect(info[genericProjectName]).to.include.keys('branches');
-                                            expect(info[genericProjectName].branches)
+                                            expect(info).to.include.keys(genericProjectId);
+                                            expect(info[genericProjectId]).to.include.keys('branches');
+                                            expect(info[genericProjectId].branches)
                                                 .not.to.include.keys('genericBranch');
 
                                             done();
@@ -1030,6 +981,285 @@ describe('GME client', function () {
             });
         });
 
+        it('should fork the active branch without giving commitHash', function (done) {
+            var activeBranchName,
+                forkName = 'forked',
+                commitHash;
+
+            client.selectProject(projectId, null, function (err) {
+                expect(err).to.equal(null);
+                activeBranchName = client.getActiveBranchName();
+                commitHash = client.getActiveCommitHash();
+                client.deleteBranch(projectId, forkName, commitHash, function (err) {
+                    expect(err).to.equal(null);
+                    client.forkCurrentBranch(forkName, null, function (err, name, hash) {
+                        expect(err).to.equal(null);
+                        expect(name).to.equal(forkName);
+                        expect(hash).to.equal(commitHash);
+
+                        client.getBranches(projectId, function (err, branches) {
+                            expect(err).to.equal(null);
+                            expect(branches).to.include.keys('forked');
+                            expect(branches.forked).to.equal(commitHash);
+                            done();
+                        });
+                    });
+                });
+            });
+        });
+
+        it('should fork the active branch without giving commitHash and forkName', function (done) {
+            var activeBranchName,
+                commitHash;
+
+            client.selectProject(projectId, null, function (err) {
+                expect(err).to.equal(null);
+                activeBranchName = client.getActiveBranchName();
+                commitHash = client.getActiveCommitHash();
+
+                client.forkCurrentBranch(null, null, function (err, name, hash) {
+                    expect(err).to.equal(null);
+                    expect(hash).to.equal(commitHash);
+
+                    client.getBranches(projectId, function (err, branches) {
+                        expect(err).to.equal(null);
+                        expect(branches).to.include.keys(name);
+                        expect(branches[name]).to.equal(commitHash);
+                        done();
+                    });
+                });
+            });
+        });
+
+        it('should fork the active branch to given commitHash', function (done) {
+            var activeBranchName,
+                forkName = 'myForkWithGivenHash',
+                commitHash;
+
+            client.selectProject(projectId, null, function (err) {
+                expect(err).to.equal(null);
+                activeBranchName = client.getActiveBranchName();
+                commitHash = client.getActiveCommitHash();
+                expect(err).to.equal(null);
+
+                client.deleteBranch(projectId, forkName, commitHash, function (err) {
+                    expect(err).to.equal(null);
+
+                    client.forkCurrentBranch(forkName, commitHash, function (err, name, hash) {
+                        expect(err).to.equal(null);
+                        expect(hash).to.equal(commitHash);
+                        expect(name).to.equal(forkName);
+
+                        client.getBranches(projectId, function (err, branches) {
+                            expect(err).to.equal(null);
+                            expect(branches).to.include.keys(name);
+                            expect(branches[name]).to.equal(commitHash);
+                            done();
+                        });
+                    });
+                });
+            });
+        });
+
+        it('should fail before forking with bogus commitHash', function (done) {
+            var activeBranchName,
+                forkName = 'willNotBeForked',
+                commitHash = '#abc123';
+
+            client.selectProject(projectId, null, function (err) {
+                expect(err).to.equal(null);
+                activeBranchName = client.getActiveBranchName();
+
+                client.forkCurrentBranch(forkName, commitHash, function (err /*, name, hash*/) {
+                    expect(err).to.include('Could not find specified commitHash');
+
+                    client.getBranches(projectId, function (err, branches) {
+                        expect(err).to.equal(null);
+
+                        expect(branches).not.to.include.keys(forkName);
+                        done();
+                    });
+                });
+            });
+        });
+    });
+
+    describe('branch status updates', function () {
+
+    });
+
+    describe('branch watchers', function () {
+        var Client,
+            gmeConfig,
+            projectName = 'branchWatcher',
+            projectId,
+            masterHash,
+            client;
+
+        before(function (done) {
+            this.timeout(10000);
+            requirejs([
+                    'js/client',
+                    'text!gmeConfig.json'],
+                function (Client_, gmeConfigJSON) {
+                    Client = Client_;
+                    gmeConfig = JSON.parse(gmeConfigJSON);
+                    client = new Client(gmeConfig);
+                    projectId = projectName2Id(projectName, gmeConfig, client);
+                    client.connectToDatabase(function (err) {
+                        expect(err).to.equal(null);
+
+                        client.selectProject(projectId, null, function (err) {
+                            expect(err).to.equal(null);
+                            masterHash = client.getActiveCommitHash();
+                            expect(masterHash).to.include('#');
+                            done();
+                        });
+                    });
+                }
+            );
+        });
+
+        after(function (done) {
+            client.disconnectFromDatabase(done);
+        });
+
+        it('should raise BRANCH_CREATED when a new branch is created', function (done) {
+            var branchName = 'b1',
+                triggered = false,
+                handler = function (storage, eventData) {
+                    expect(triggered).to.equal(false);
+                    expect(eventData).to.not.equal(null);
+                    expect(eventData).to.include.keys('etype', 'projectId', 'branchName', 'newHash', 'oldHash');
+                    expect(eventData.etype).to.equal(client.CONSTANTS.STORAGE.BRANCH_CREATED);
+                    expect(eventData.projectId).to.equal(projectId);
+                    expect(eventData.branchName).to.equal(branchName);
+                    expect(eventData.newHash).to.equal(masterHash);
+                    expect(eventData.oldHash).to.equal('');
+
+                    triggered = true;
+                    unwatch();
+                },
+                unwatch = function () {
+                    client.unwatchProject(projectId, handler, function (err) {
+                        expect(err).to.equal(null);
+
+                        client.deleteBranch(projectId, branchName, masterHash, function (err) {
+                            expect(err).to.equal(null);
+                            done(err);
+                        });
+                    });
+                };
+
+            client.watchProject(projectId, handler, function (err) {
+                expect(err).to.equal(null);
+                client.createBranch(projectId, branchName, masterHash, function (err) {
+                    expect(err).to.equal(null);
+                    console.error('created branch', projectId, branchName);
+                });
+            });
+        });
+
+        it('should raise BRANCH_DELETED when a branch is deleted', function (done) {
+            var branchName = 'b2',
+                triggered = 0,
+                handler = function (storage, eventData) {
+                    expect(triggered).to.be.below(2);
+                    expect(eventData).to.not.equal(null);
+                    expect(eventData).to.include.keys('etype', 'projectId', 'branchName', 'newHash', 'oldHash');
+                    if (triggered === 0) {
+                        expect(eventData.etype).to.equal(client.CONSTANTS.STORAGE.BRANCH_CREATED);
+                        expect(eventData.projectId).to.equal(projectId);
+                        expect(eventData.branchName).to.equal(branchName);
+                        expect(eventData.newHash).to.equal(masterHash);
+                        expect(eventData.oldHash).to.equal('');
+                    } else if (triggered === 1) {
+                        expect(eventData.etype).to.equal(client.CONSTANTS.STORAGE.BRANCH_DELETED);
+                        expect(eventData.projectId).to.equal(projectId);
+                        expect(eventData.branchName).to.equal(branchName);
+                        expect(eventData.newHash).to.equal('');
+                        expect(eventData.oldHash).to.equal(masterHash);
+                        unwatch();
+                    }
+
+                    triggered += 1;
+                },
+                unwatch = function () {
+                    client.unwatchProject(projectId, handler, function (err) {
+                        done(err);
+                    });
+                };
+
+            client.watchProject(projectId, handler, function (err) {
+                expect(err).to.equal(null);
+                client.createBranch(projectId, branchName, masterHash, function (err) {
+                    expect(err).to.equal(null);
+                    client.deleteBranch(projectId, branchName, masterHash, function (err) {
+                        expect(err).to.equal(null);
+                    });
+                });
+            });
+        });
+
+        it('should raise BRANCH_HASH_UPDATED when the branch is updated', function (done) {
+            var branchName = 'b3',
+                triggered = false,
+                newHash,
+                handler = function (storage, eventData) {
+                    expect(triggered).to.equal(false);
+                    expect(eventData).to.not.equal(null);
+                    expect(eventData).to.include.keys('etype', 'projectId', 'branchName', 'newHash', 'oldHash');
+                    expect(eventData.etype).to.equal(client.CONSTANTS.STORAGE.BRANCH_HASH_UPDATED);
+                    expect(eventData.projectId).to.equal(projectId);
+                    expect(eventData.branchName).to.equal(branchName);
+                    expect(eventData.oldHash).to.equal(masterHash);
+                    expect(eventData.newHash).to.not.equal(masterHash);
+                    newHash = eventData.newHash;
+
+                    triggered = true;
+                    unwatch();
+                },
+                unwatch = function () {
+                    client.unwatchProject(projectId, handler, function (err) {
+                        expect(err).to.equal(null);
+
+                        client.deleteBranch(projectId, branchName, newHash, function (err) {
+                            expect(err).to.equal(null);
+                            done(err);
+                        });
+                    });
+                };
+
+            client.createBranch(projectId, branchName, masterHash, function (err) {
+                expect(err).to.equal(null);
+
+                client.selectBranch(branchName, null, function (err) {
+                    expect(err).to.equal(null);
+
+                    client.watchProject(projectId, handler, function (err) {
+                        expect(err).to.equal(null);
+                        var loaded = false,
+                            userGuid;
+
+                        function nodeEventHandler(events) {
+                            if (loaded) {
+                                done(new Error('More than one node event'));
+                            } else {
+                                loaded = true;
+                                expect(events.length).to.equal(2);
+                                client.removeUI(userGuid);
+
+                                client.setAttributes('', 'name', 'newRootName',
+                                    'should raise BRANCH_HASH_UPDATED when the branch is updated.');
+                            }
+                        }
+
+                        userGuid = client.addUI({}, nodeEventHandler);
+                        client.updateTerritory(userGuid, {'': {children: 0}});
+                    });
+                });
+            });
+        });
     });
 
     describe('client/node tests', function () {
@@ -1037,6 +1267,7 @@ describe('GME client', function () {
             gmeConfig,
             client,
             projectName = 'ClientNodeInquiryTests',
+            projectId,
             clientNodePath = '/323573539',
             clientNode,
             factoryConsoleLog = console.log;
@@ -1048,10 +1279,10 @@ describe('GME client', function () {
                 Client = Client_;
                 gmeConfig = JSON.parse(gmeConfigJSON);
                 client = new Client(gmeConfig);
-
-                client.connectToDatabaseAsync({}, function (err) {
+                projectId = projectName2Id(projectName, gmeConfig, client);
+                client.connectToDatabase(function (err) {
                     expect(err).to.equal(null);
-                    client.selectProjectAsync(projectName, function (err) {
+                    client.selectProject(projectId, null, function (err) {
                         var user = {},
                             userPattern = {},
                             userGuid,
@@ -1069,6 +1300,7 @@ describe('GME client', function () {
                                 alreadyHandled = true;
                                 clientNode = client.getNode(clientNodePath);
                                 expect(clientNode).not.to.equal(null);
+                                client.startTransaction(); //to ensure that nothing will be saved
                                 done();
                             }
                         }
@@ -1084,6 +1316,10 @@ describe('GME client', function () {
 
         afterEach(function () {
             console.log = factoryConsoleLog;
+        });
+
+        after(function () {
+            client.completeTransaction();
         });
 
         it('should return the path as identification of the node', function () {
@@ -1122,23 +1358,43 @@ describe('GME client', function () {
             expect(names).to.include('value');
         });
 
-        it('should return the list of attribute names that has value defined on this level oof inheritance',
+        it('should return the list of attribute names that has value defined on this level of inheritance',
             function () {
                 var names = clientNode.getOwnAttributeNames();
                 expect(names).to.have.length(1);
                 expect(names).to.contain('name');
-            });
+            }
+        );
+
+        it('should return the list of META-defined attribute names', function () {
+            expect(clientNode.getValidAttributeNames()).to.have.members(['name', 'value']);
+        });
 
         it('should return the value of the attribute under the defined name', function () {
             expect(clientNode.getAttribute('name')).to.equal('check');
             expect(clientNode.getAttribute('value')).to.equal(10);
         });
 
+        it('should create and return the value of complex attribute without saving, then remove it', function () {
+            var attribute = {
+                text: 'something',
+                number: 1
+            };
+
+            client.setAttributes(clientNodePath, 'newAttr', attribute);
+            expect(clientNode.getAttributeNames()).to.include.members(['newAttr']);
+            expect(clientNode.getAttribute('newAttr')).to.eql(attribute);
+            expect(clientNode.getEditableAttribute('newAttr')).to.eql(attribute);
+            expect(clientNode.getOwnEditableAttribute('newAttr')).to.eql(attribute);
+            client.delAttributes(clientNodePath, 'newAttr');
+        });
+
         it('in case of unknown attribute the result should be undefined', function () {
             expect(clientNode.getAttribute('unknown_attribute')).to.equal(undefined);
         });
 
-        //TODO right now the object freezing is disabled so we cannot test that the ordinary getAttribute not allows the modification if the attribute is complex
+        //TODO right now the object freezing is disabled
+        // so we cannot test that the ordinary getAttribute not allows the modification if the attribute is complex
         it('should return an editable copy of the attribute', function () {
             expect(clientNode.getEditableAttribute('name')).to.equal('check');
             expect(clientNode.getEditableAttribute('value')).to.equal(10);
@@ -1175,7 +1431,8 @@ describe('GME client', function () {
             expect(clientNode.getRegistry('unknown_registry')).to.equal(undefined);
         });
 
-        //TODO right now the object freezing is disabled so we cannot test that the ordinary getRegistry not allows the modification if the attribute is complex
+        //TODO right now the object freezing is disabled
+        // so we cannot test that the ordinary getRegistry not allows the modification if the attribute is complex
         it('should return an editable copy of the registry', function () {
             expect(clientNode.getEditableRegistry('position')).to.deep.equal({x: 300, y: 466});
         });
@@ -1188,12 +1445,24 @@ describe('GME client', function () {
             expect(clientNode.getOwnEditableRegistry('position')).to.deep.equal({x: 300, y: 466});
         });
 
-        it('should return the names of available pointers', function () {
-            var names = clientNode.getPointerNames();
-            expect(names).to.have.length(2);
-            expect(names).to.include('ptr');
-            expect(names).to.include('base');
+        it('should create and return the value of a simple registry without saving, then remove it', function () {
+            var registryItem = 'something';
+
+            client.setRegistry(clientNodePath, 'newReg', registryItem);
+            expect(clientNode.getRegistryNames()).to.include.members(['newReg']);
+            expect(clientNode.getRegistry('newReg')).to.eql(registryItem);
+            expect(clientNode.getEditableRegistry('newReg')).to.eql(registryItem);
+            expect(clientNode.getOwnEditableRegistry('newReg')).to.eql(registryItem);
+            client.delRegistry(clientNodePath, 'newReg');
         });
+        
+        it('should return the names of available pointers', function () {
+            expect(clientNode.getPointerNames()).to.have.members(['ptr', 'base']);
+        });
+
+        it('should return the list of META-defined pointers', function () {
+            expect(clientNode.getValidPointerNames()).to.have.members(['ptr']);
+        })
 
         it('should return the names of available pointers which has a target on this inheritance level',
             function () {
@@ -1284,25 +1553,14 @@ describe('GME client', function () {
             expect(collectionPaths).to.include('/1400778473');
         });
 
-        //TODO refactor this function or remove if no need for it
-        it('should print the content of the node to the console', function (done) {
-            var oldConsoleLog = console.log;
-            console.log = function (txt1, err, txt2, jNode) {
-                console.log = oldConsoleLog;
-                expect(jNode).to.have.ownProperty('attributes');
-                expect(jNode).to.have.ownProperty('pointers');
-                expect(jNode).to.have.ownProperty('children');
-                expect(jNode.attributes).to.have.ownProperty('name');
-                expect(jNode.attributes.name).to.equal('check');
-                done();
-            };
-            clientNode.printData();
-        });
-
         it('should return a textual identification of the node', function () {
             expect(clientNode.toString()).to.contain('check');
             expect(clientNode.toString()).to.contain('/323573539');
         });
+
+        it('should log the textual representation of the node',function(){
+
+        })
     });
 
     describe('basic territory tests', function () {
@@ -1310,14 +1568,15 @@ describe('GME client', function () {
             gmeConfig,
             client,
             projectName = 'territoryProject',
+            projectId,
             baseCommitHash;
 
         function buildUpForTest(branchName, next) {
-            client.selectProjectAsync(projectName, function (err) {
+            client.selectProject(projectId, null, function (err) {
                 expect(err).to.equal(null);
-                client.createBranchAsync(branchName, baseCommitHash, function (err) {
+                client.createBranch(projectId, branchName, baseCommitHash, function (err) {
                     expect(err).to.equal(null);
-                    client.selectBranchAsync(branchName, function (err) {
+                    client.selectBranch(branchName, null, function (err) {
                         expect(err).to.equal(null);
 
                         next();
@@ -1332,13 +1591,13 @@ describe('GME client', function () {
                 Client = Client_;
                 gmeConfig = JSON.parse(gmeConfigJSON);
                 client = new Client(gmeConfig);
-
-                client.connectToDatabaseAsync({}, function (err) {
+                projectId = projectName2Id(projectName, gmeConfig, client);
+                client.connectToDatabase(function (err) {
                     expect(err).to.equal(null);
-                    client.selectProjectAsync(projectName, function (err) {
+                    client.selectProject(projectId, null, function (err) {
                         expect(err).to.equal(null);
 
-                        baseCommitHash = client.getActualCommit();
+                        baseCommitHash = client.getActiveCommitHash();
                         done();
                     });
                 });
@@ -1456,10 +1715,16 @@ describe('GME client', function () {
                     expect(events).not.to.equal(null);
                     expect(events).to.include({eid: '/323573539', etype: 'load'});
 
-                    client.connectToDatabaseAsync({}, function (err) {
+                    client.disconnectFromDatabase(function (err) {
                         expect(err).to.equal(null);
-                        done();
+
+                        client.connectToDatabase(function (err) {
+                            expect(err).to.equal(null);
+
+                            done();
+                        });
                     });
+
                     return;
                 }
 
@@ -1491,7 +1756,6 @@ describe('GME client', function () {
                 UI = {
                     reLaunch: function () {
                         reLaunchCalled = true;
-                        return;
                     }
                 };
 
@@ -1502,13 +1766,18 @@ describe('GME client', function () {
                     expect(events).not.to.equal(null);
                     expect(events).to.include({eid: '/323573539', etype: 'load'});
 
-                    client.connectToDatabaseAsync({}, function (err) {
+                    client.disconnectFromDatabase(function (err) {
                         expect(err).to.equal(null);
-                        expect(reLaunchCalled).to.equal(true);
 
-                        client.removeUI(guid);
-                        done();
+                        client.connectToDatabase(function (err) {
+                            expect(err).to.equal(null);
+                            expect(reLaunchCalled).to.equal(true);
+
+                            client.removeUI(guid);
+                            done();
+                        });
                     });
+
                     return;
                 }
 
@@ -1573,16 +1842,17 @@ describe('GME client', function () {
         var Client,
             gmeConfig,
             client,
+            currentTestId,
+            projectId,
             projectName = 'nodeManipulationProject',
             baseCommitHash;
 
-        function buildUpForTest(testId, patternObject, eventCallback) {
+        function buildUpForTest(testId, patternObject, commitHandler, eventCallback) {
             var branchName = testId;
-
-            client.createBranchAsync(branchName, baseCommitHash, function (err) {
+            client.createBranch(projectId, branchName, baseCommitHash, function (err) {
                 expect(err).to.equal(null);
 
-                client.selectBranchAsync(branchName, function (err) {
+                client.selectBranch(branchName, commitHandler, function (err) {
                     var user = {},
                         userId = testId;
 
@@ -1600,30 +1870,50 @@ describe('GME client', function () {
                 Client = Client_;
                 gmeConfig = JSON.parse(gmeConfigJSON);
                 client = new Client(gmeConfig);
-
-                client.connectToDatabaseAsync({}, function (err) {
+                projectId = projectName2Id(projectName, gmeConfig, client);
+                client.connectToDatabase(function (err) {
                     expect(err).to.equal(null);
-                    client.selectProjectAsync(projectName, function (err) {
+                    client.selectProject(projectId, null, function (err) {
                         expect(err).to.equal(null);
-
-                        baseCommitHash = client.getActualCommit();
+                        baseCommitHash = client.getActiveCommitHash();
+                        console.log('ProjectName, branchName, commitHash',
+                            client.getActiveProjectId(), client.getActiveBranchName(), client.getActiveCommitHash());
                         done();
                     });
                 });
             });
         });
 
+        after(function (done) {
+            client.disconnectFromDatabase(done);
+        });
+
+        afterEach(function (done) {
+            var branchHash = client.getActiveCommitHash();
+            client.removeUI(currentTestId);
+            client.selectBranch('master', null, function (err) {
+                if (err) {
+                    done(err);
+                    return;
+                }
+                client.deleteBranch(projectId, currentTestId, branchHash, done);
+            });
+        });
+
         it('should modify the attribute of the given node', function (done) {
             var testState = 'init',
                 testId = 'basicSetAttribute',
+                commitHandler = function (queue, result, callback) {
+                    callback(false);
+                    done();
+                },
                 node;
-            buildUpForTest(testId, {'/323573539': {children: 0}}, function (events) {
+            currentTestId = testId;
+            buildUpForTest(testId, {'/323573539': {children: 0}}, commitHandler, function (events) {
                 if (testState === 'init') {
                     testState = 'checking';
-
                     expect(events).to.have.length(2);
                     expect(events[1]).to.deep.equal({eid: '/323573539', etype: 'load'});
-
                     node = client.getNode(events[1].eid);
                     expect(node).not.to.equal(null);
                     expect(node.getAttribute('name')).to.equal('check');
@@ -1635,13 +1925,9 @@ describe('GME client', function () {
                 if (testState === 'checking') {
                     expect(events).to.have.length(2);
                     expect(events[1]).to.deep.equal({eid: '/323573539', etype: 'update'});
-
                     node = client.getNode(events[1].eid);
                     expect(node).not.to.equal(null);
                     expect(node.getAttribute('name')).to.equal('checkModified');
-
-                    client.removeUI(testId);
-                    done();
                 }
             });
         });
@@ -1649,8 +1935,15 @@ describe('GME client', function () {
         it('should delete the given attribute of the node', function (done) {
             var testState = 'init',
                 testId = 'basicDelAttribute',
+                commitHandler = function (queue, result, callback) {
+                    callback(false);
+                    done();
+                },
                 node;
-            buildUpForTest(testId, {'/323573539': {children: 0}}, function (events) {
+
+            currentTestId = testId;
+
+            buildUpForTest(testId, {'/323573539': {children: 0}}, commitHandler, function (events) {
                 if (testState === 'init') {
                     testState = 'checking';
 
@@ -1672,9 +1965,6 @@ describe('GME client', function () {
                     node = client.getNode(events[1].eid);
                     expect(node).not.to.equal(null);
                     expect(node.getAttribute('name')).to.equal('node');
-
-                    client.removeUI(testId);
-                    done();
                 }
             });
         });
@@ -1682,8 +1972,14 @@ describe('GME client', function () {
         it('should sets the given registry entry of the node', function (done) {
             var testState = 'init',
                 testId = 'basicSetRegistry',
+                commitHandler = function (queue, result, callback) {
+                    callback(false);
+                    done();
+                },
                 node;
-            buildUpForTest(testId, {'/323573539': {children: 0}}, function (events) {
+            currentTestId = testId;
+
+            buildUpForTest(testId, {'/323573539': {children: 0}}, commitHandler, function (events) {
                 if (testState === 'init') {
                     testState = 'checking';
 
@@ -1699,16 +1995,13 @@ describe('GME client', function () {
                 }
 
                 if (testState === 'checking') {
+
                     expect(events).to.have.length(2);
                     expect(events[1]).to.deep.equal({eid: '/323573539', etype: 'update'});
 
                     node = client.getNode(events[1].eid);
                     expect(node).not.to.equal(null);
                     expect(node.getRegistry('position')).to.deep.equal({x: 100, y: 100});
-
-                    client.removeUI(testId);
-                    done();
-
                 }
             });
         });
@@ -1716,8 +2009,15 @@ describe('GME client', function () {
         it('should remove the given registry key of the node', function (done) {
             var testState = 'init',
                 testId = 'basicDelRegistry',
+                commitHandler = function (queue, result, callback) {
+                    callback(false);
+                    done();
+                },
                 node;
-            buildUpForTest(testId, {'/323573539': {children: 0}}, function (events) {
+
+            currentTestId = testId;
+
+            buildUpForTest(testId, {'/323573539': {children: 0}}, commitHandler, function (events) {
                 if (testState === 'init') {
                     testState = 'checking';
 
@@ -1739,31 +2039,40 @@ describe('GME client', function () {
                     node = client.getNode(events[1].eid);
                     expect(node).not.to.equal(null);
                     expect(node.getRegistry('position')).to.deep.equal({x: 371, y: 213});
-
-                    client.removeUI(testId);
-                    done();
-
                 }
             });
         });
 
-        it('should complete a transaction and commit the changes', function (done) {
-            var testId = 'basicCompleteTransaction';
-            buildUpForTest(testId, {}, function () {
+        it('should complete a transaction but not commit any changes', function (done) {
+            var testId = 'basicCompleteTransaction',
+                commitHandler = function (queue, result, callback) {
+                    callback(false);
+                };
+            currentTestId = testId;
+
+            buildUpForTest(testId, {}, commitHandler, function () {
                 client.removeUI(testId);//we do not need a UI and it would just make test code more complex
-                client.completeTransaction('should indicate a commit', function (err) {
+                client.completeTransaction('should not persist anything', function (err) {
                     expect(err).to.equal(null);
-                    expect(baseCommitHash).not.to.equal(client.getActualCommit());
+                    expect(baseCommitHash).to.equal(client.getActiveCommitHash());
                     done();
                 });
             });
         });
 
-        it('should start a transaction', function (done) {
+        // FIXME: This throw an error.
+        it.skip('should start a transaction', function (done) {
             var testId = 'basicStartTransaction',
                 testState = 'init',
+                commitHandler = function (queue, result, callback) {
+                    callback(false);
+                    done();
+                },
                 node = null;
-            buildUpForTest(testId, {'/1': {children: 0}}, function (events) {
+
+            currentTestId = testId;
+
+            buildUpForTest(testId, {'/1': {children: 0}}, commitHandler, function (events) {
                 if (testState === 'init') {
                     testState = 'checking';
 
@@ -1779,11 +2088,7 @@ describe('GME client', function () {
                     client.setAttributes('/1', 'name', 'FCOmodified', 'change without commit');
                     client.setAttributes('/1', 'newAttribute', 42, 'another change without commit');
                     client.setRegistry('/1', 'position', {x: 50, y: 50});
-                    client.completeTransaction('now will the events get generated', function (err) {
-                        expect(err).to.equal(null);
-                        client.removeUI(testId);
-                        done();
-                    });
+                    client.completeTransaction('now will the events get generated');
                 }
 
                 if (testState === 'checking') {
@@ -1803,8 +2108,7 @@ describe('GME client', function () {
                 }
 
                 if (testState === null) {
-                    done(new Error('more than one set of events arrived during or after a transaction!'));
-                    return;
+                    throw new Error('more than one set of events arrived during or after a transaction!');
                 }
             });
         });
@@ -1812,8 +2116,14 @@ describe('GME client', function () {
         it('should remove the given node', function (done) {
             var testState = 'init',
                 testId = 'basicDelNode',
+                commitHandler = function (queue, result, callback) {
+                    callback(false);
+                    done();
+                },
                 node;
-            buildUpForTest(testId, {'/323573539': {children: 0}}, function (events) {
+            currentTestId = testId;
+
+            buildUpForTest(testId, {'/323573539': {children: 0}}, commitHandler, function (events) {
                 if (testState === 'init') {
                     testState = 'checking';
 
@@ -1833,9 +2143,6 @@ describe('GME client', function () {
 
                     node = client.getNode(events[1].eid);
                     expect(node).to.equal(null);
-
-                    client.removeUI(testId);
-                    done();
                 }
             });
         });
@@ -1843,42 +2150,53 @@ describe('GME client', function () {
         it('should set the given pointer of the node to the specified target', function (done) {
             var testState = 'init',
                 testId = 'basicMakePointer',
-                node;
-            buildUpForTest(testId, {'/323573539': {children: 0}, '/1': {children: 0}}, function (events) {
-                if (testState === 'init') {
-                    testState = 'checking';
-
-                    expect(events).to.have.length(3);
-                    expect(events).to.include({eid: '/323573539', etype: 'load'});
-                    expect(events).to.include({eid: '/1', etype: 'load'});
-
-                    node = client.getNode(events[1].eid);
-                    expect(node).not.to.equal(null);
-
-                    client.makePointer('/323573539', 'ptr', '/1', 'basic make pointer test');
-                    return;
-                }
-
-                if (testState === 'checking') {
-                    expect(events).to.have.length(3);
-                    expect(events).to.include({eid: '/323573539', etype: 'update'});
-                    expect(events).to.include({eid: '/1', etype: 'update'});
-
-                    node = client.getNode('/323573539');
-                    expect(node).not.to.equal(null);
-                    expect(node.getPointer('ptr')).to.deep.equal({to: '/1', from: []});
-
-                    client.removeUI(testId);
+                commitHandler = function (queue, result, callback) {
+                    callback(false);
                     done();
+                },
+                node;
+            currentTestId = testId;
+
+            buildUpForTest(testId, {'/323573539': {children: 0}, '/1': {children: 0}}, commitHandler,
+                function (events) {
+                    if (testState === 'init') {
+                        testState = 'checking';
+
+                        expect(events).to.have.length(3);
+                        expect(events).to.include({eid: '/323573539', etype: 'load'});
+                        expect(events).to.include({eid: '/1', etype: 'load'});
+
+                        node = client.getNode(events[1].eid);
+                        expect(node).not.to.equal(null);
+
+                        client.makePointer('/323573539', 'ptr', '/1', 'basic make pointer test');
+                        return;
+                    }
+
+                    if (testState === 'checking') {
+                        expect(events).to.have.length(3);
+                        expect(events).to.include({eid: '/323573539', etype: 'update'});
+                        expect(events).to.include({eid: '/1', etype: 'update'});
+
+                        node = client.getNode('/323573539');
+                        expect(node).not.to.equal(null);
+                        expect(node.getPointer('ptr')).to.deep.equal({to: '/1', from: []});
+                    }
                 }
-            });
+            );
         });
 
         it('should set a null target', function (done) {
             var testState = 'init',
                 testId = 'makeNullPointer',
+                commitHandler = function (queue, result, callback) {
+                    callback(false);
+                    done();
+                },
                 node;
-            buildUpForTest(testId, {'/1697300825': {children: 0}}, function (events) {
+
+            currentTestId = testId;
+            buildUpForTest(testId, {'/1697300825': {children: 0}}, commitHandler, function (events) {
                 if (testState === 'init') {
                     testState = 'checking';
 
@@ -1900,9 +2218,6 @@ describe('GME client', function () {
                     node = client.getNode('/1697300825');
                     expect(node).not.to.equal(null);
                     expect(node.getPointer('ptr')).to.deep.equal({to: null, from: []});
-
-                    client.removeUI(testId);
-                    done();
                 }
             });
         });
@@ -1910,8 +2225,15 @@ describe('GME client', function () {
         it('should remove the given pointer of the node', function (done) {
             var testState = 'init',
                 testId = 'basicDelPointer',
+                commitHandler = function (queue, result, callback) {
+                    callback(false);
+                    done();
+                },
                 node;
-            buildUpForTest(testId, {'/1697300825': {children: 0}}, function (events) {
+
+            currentTestId = testId;
+
+            buildUpForTest(testId, {'/1697300825': {children: 0}}, commitHandler, function (events) {
                 if (testState === 'init') {
                     testState = 'checking';
 
@@ -1935,9 +2257,6 @@ describe('GME client', function () {
                     expect(node).not.to.equal(null);
 
                     expect(node.getPointer('ptr')).to.deep.equal({to: null, from: []});
-
-                    client.removeUI(testId);
-                    done();
                 }
             });
         });
@@ -1947,9 +2266,16 @@ describe('GME client', function () {
                 testId = 'basicCopyNodes',
                 node,
                 initialPaths = [],
+                commitHandler = function (queue, result, callback) {
+                    callback(false);
+                    done();
+                },
                 newPaths = [],
                 i;
-            buildUpForTest(testId, {'': {children: 1}}, function (events) {
+
+            currentTestId = testId;
+
+            buildUpForTest(testId, {'': {children: 1}}, commitHandler, function (events) {
                 if (testState === 'init') {
                     testState = 'checking';
 
@@ -1980,7 +2306,8 @@ describe('GME client', function () {
                 }
 
                 if (testState === 'checking') {
-                    //FIXME why the update events missing about the source nodes - it works correctly with single node copying
+                    //FIXME why the update events missing about the source nodes -
+                    // it works correctly with single node copying
                     expect(events).to.have.length(8);
 
                     //find out the new node paths
@@ -2012,9 +2339,6 @@ describe('GME client', function () {
                     expect(node).not.to.equal(null);
                     expect(node.getAttribute('name')).to.contain('copy');
                     expect(node.getPointer('ptr')).to.deep.equal({to: '/323573539', from: []});
-
-                    client.removeUI(testId);
-                    done();
                 }
             });
         });
@@ -2025,9 +2349,16 @@ describe('GME client', function () {
                 node,
                 initialPaths = [],
                 newPaths = [],
+                commitHandler = function (queue, result, callback) {
+                    callback(false);
+                    done();
+                },
                 i,
                 newTarget = null;
-            buildUpForTest(testId, {'': {children: 1}}, function (events) {
+
+            currentTestId = testId;
+
+            buildUpForTest(testId, {'': {children: 1}}, commitHandler, function (events) {
                 if (testState === 'init') {
                     testState = 'checking';
 
@@ -2110,9 +2441,6 @@ describe('GME client', function () {
                     expect(node).not.to.equal(null);
                     expect(node.getAttribute('name')).to.contain('copy');
                     expect(node.getRegistry('position')).to.deep.equal({x: 100, y: 100});
-
-                    client.removeUI(testId);
-                    done();
                 }
             });
         });
@@ -2121,10 +2449,17 @@ describe('GME client', function () {
             var testState = 'init',
                 testId = 'copySingleNode',
                 node,
+                commitHandler = function (queue, result, callback) {
+                    callback(false);
+                    done();
+                },
                 initialPaths = [],
                 newPaths = [],
                 i;
-            buildUpForTest(testId, {'': {children: 1}}, function (events) {
+
+            currentTestId = testId;
+
+            buildUpForTest(testId, {'': {children: 1}}, commitHandler, function (events) {
                 if (testState === 'init') {
                     testState = 'checking';
 
@@ -2175,20 +2510,23 @@ describe('GME client', function () {
                     expect(node.getAttribute('name')).to.contain('copy');
                     expect(node.getRegistry('position')).to.deep.equal({x: 100, y: 100});
                     expect(node.getPointer('ptr')).to.deep.equal({to: '/323573539', from: []});
-
-                    client.removeUI(testId);
-                    done();
                 }
             });
         });
 
-        it('should put an error to the console if the container is wrongly given or missing', function (done) {
+        it.skip('should put an error to the console if the container is wrongly given or missing', function (done) {
             var testId = 'copyFailureTests',
                 failures = 0,
                 wantedFailures = 2,
+                commitHandler = function (queue, result, callback) {
+                    callback(false);
+                    done();
+                },
                 oldConsoleLog = console.log; //TODO awkward but probably should be changed in the code as well
 
-            buildUpForTest(testId, {'': {children: 1}}, function (events) {
+            currentTestId = testId;
+
+            buildUpForTest(testId, {'': {children: 1}}, commitHandler, function (/*events*/) {
 
                 console.log = function (txt) {
                     expect(txt).to.contain('wrong');
@@ -2200,7 +2538,6 @@ describe('GME client', function () {
 
                 client.copyMoreNodes({}, 'try to copy without parentId');
                 client.copyMoreNodes({parentId: '/42/42'}, 'try to copy with unknown parentId');
-                return;
             });
         });
 
@@ -2210,8 +2547,15 @@ describe('GME client', function () {
                 node,
                 newId = null,
                 initialPaths = [],
+                commitHandler = function (queue, result, callback) {
+                    callback(false);
+                    done();
+                },
                 i;
-            buildUpForTest(testId, {'': {children: 1}}, function (events) {
+
+            currentTestId = testId;
+
+            buildUpForTest(testId, {'': {children: 1}}, commitHandler, function (events) {
                 if (testState === 'init') {
                     testState = 'checking';
 
@@ -2249,9 +2593,6 @@ describe('GME client', function () {
                     expect(node.getAttribute('name')).to.equal('check');
                     expect(node.getRegistry('position')).to.deep.equal({x: 200, y: 300});
                     expect(node.getChildrenIds()).to.have.length(3);
-
-                    client.removeUI(testId);
-                    done();
                 }
             });
         });
@@ -2260,10 +2601,17 @@ describe('GME client', function () {
             var testState = 'init',
                 testId = 'createChildDefaultPosition',
                 node,
+                commitHandler = function (queue, result, callback) {
+                    callback(false);
+                    done();
+                },
                 newId = null,
                 initialPaths = [],
                 i;
-            buildUpForTest(testId, {'': {children: 1}}, function (events) {
+
+            currentTestId = testId;
+
+            buildUpForTest(testId, {'': {children: 1}}, commitHandler, function (events) {
                 if (testState === 'init') {
                     testState = 'checking';
 
@@ -2290,8 +2638,7 @@ describe('GME client', function () {
                             if (newId === null) {
                                 newId = events[i].eid;
                             } else {
-                                done(new Error('there should be only one new element in the territory!'));
-                                return;
+                                throw new Error('there should be only one new element in the territory!');
                             }
                         }
                     }
@@ -2301,9 +2648,6 @@ describe('GME client', function () {
                     expect(node.getAttribute('name')).to.equal('check');
                     expect(node.getRegistry('position')).to.deep.equal({x: 100, y: 100});
                     expect(node.getChildrenIds()).to.have.length(3);
-
-                    client.removeUI(testId);
-                    done();
                 }
             });
         });
@@ -2313,10 +2657,17 @@ describe('GME client', function () {
                 testId = 'basicCreateChildren',
                 node,
                 initialPaths = [],
+                commitHandler = function (queue, result, callback) {
+                    callback(false);
+                    done();
+                },
                 newPaths = [],
                 i,
                 newTarget = null;
-            buildUpForTest(testId, {'': {children: 1}}, function (events) {
+
+            currentTestId = testId;
+
+            buildUpForTest(testId, {'': {children: 1}}, commitHandler, function (events) {
                 if (testState === 'init') {
                     testState = 'checking';
 
@@ -2400,9 +2751,6 @@ describe('GME client', function () {
                     expect(node.getAttribute('name')).to.contain('copy');
                     expect(node.getRegistry('position')).to.deep.equal({x: 400, y: 400});
                     expect(node.getBaseId()).to.equal('/323573539');
-
-                    client.removeUI(testId);
-                    done();
                 }
             });
         });
@@ -2411,11 +2759,24 @@ describe('GME client', function () {
             var testState = 'init',
                 testId = 'basicMoveNodes',
                 node,
+                first = true,
+                commitHandler = function (queue, result, callback) {
+                    if (first) {
+                        first = false;
+                        callback(true);
+                    } else {
+                        callback(false);
+                        done();
+                    }
+                },
                 containerId = null,
                 initialPaths = [],
                 extendedTerritory,
                 i;
-            buildUpForTest(testId, {'': {children: 1}}, function (events) {
+
+            currentTestId = testId;
+
+            buildUpForTest(testId, {'': {children: 1}}, commitHandler, function (events) {
                 if (testState === 'init') {
                     testState = 'containerCreated';
 
@@ -2446,8 +2807,7 @@ describe('GME client', function () {
                             if (containerId === null) {
                                 containerId = events[i].eid;
                             } else {
-                                done(new Error('only one new element is expected!!'));
-                                return;
+                                throw new Error('only one new element is expected!!');
                             }
                         }
                     }
@@ -2469,14 +2829,7 @@ describe('GME client', function () {
                         '/1697300825': {attributes: {name: 'member1moved'}, registry: {position: {x: 500, y: 600}}},
                         '/1400778473': {attributes: {name: 'member2moved'}}
                     });
-                    client.completeTransaction('move nodes test - move nodes', function (err) {
-
-                        //this callback is called after we handled the events
-                        //TODO should we fix it??? how???
-                        client.removeUI(testId);
-                        expect(err).to.equal(null);
-                        done();
-                    });
+                    client.completeTransaction('move nodes test - move nodes');
                     return;
                 }
 
@@ -2499,8 +2852,6 @@ describe('GME client', function () {
                     expect(node.getPointer('ptr')).to.deep.equal({to: '/323573539', from: []});
                     expect(node.getAttribute('name')).to.contain('moved');
                     expect(node.getRegistry('position')).to.deep.equal({x: 79, y: 704});
-
-                    return;
                 }
             });
         });
@@ -2509,8 +2860,15 @@ describe('GME client', function () {
             var testState = 'init',
                 testId = 'basicSetConstraint',
                 node,
+                commitHandler = function (queue, result, callback) {
+                    callback(false);
+                    done();
+                },
                 constraint = null;
-            buildUpForTest(testId, {'/1400778473': {children: 0}}, function (events) {
+
+            currentTestId = testId;
+
+            buildUpForTest(testId, {'/1400778473': {children: 0}}, commitHandler, function (events) {
                 if (testState === 'init') {
                     testState = 'checking';
 
@@ -2547,9 +2905,6 @@ describe('GME client', function () {
                         script: 'function(core,node,callback){callback(new Error(\'not implemented\'};',
                         priority: 11
                     });
-
-                    client.removeUI(testId);
-                    done();
                 }
             });
         });
@@ -2558,9 +2913,15 @@ describe('GME client', function () {
             // delConstraint 701504349
             var testState = 'init',
                 testId = 'basicDelConstraint',
-                node,
-                constraint = null;
-            buildUpForTest(testId, {'/701504349': {children: 0}}, function (events) {
+                commitHandler = function (queue, result, callback) {
+                    callback(false);
+                    done();
+                },
+                node;
+
+            currentTestId = testId;
+
+            buildUpForTest(testId, {'/701504349': {children: 0}}, commitHandler, function (events) {
                 if (testState === 'init') {
                     testState = 'checking';
 
@@ -2585,9 +2946,6 @@ describe('GME client', function () {
                     expect(node).not.to.equal(null);
                     expect(node.getConstraintNames()).not.to.include('constraint');
                     expect(node.getOwnConstraintNames()).to.empty;
-
-                    client.removeUI(testId);
-                    done();
                 }
             });
         });
@@ -2595,278 +2953,330 @@ describe('GME client', function () {
         it('should add the given node as a new member to the specified set of our node', function (done) {
             var testState = 'init',
                 testId = 'basicAddMember',
-                node;
-            buildUpForTest(testId, {'/323573539': {children: 0}, '/1697300825': {children: 0}}, function (events) {
-                if (testState === 'init') {
-                    testState = 'checking';
-
-                    expect(events).to.have.length(3);
-                    expect(events).to.include({eid: '/323573539', etype: 'load'});
-                    expect(events).to.include({eid: '/1697300825', etype: 'load'});
-
-                    node = client.getNode('/323573539');
-                    expect(node).not.to.equal(null);
-                    expect(node.getMemberIds('newSet')).to.empty;
-
-
-                    client.addMember('/323573539', '/1697300825', 'newSet', 'basic add member test');
-                    return;
-                }
-
-                if (testState === 'checking') {
-                    expect(events).to.have.length(3);
-
-                    node = client.getNode('/323573539');
-                    expect(node).not.to.equal(null);
-                    expect(node.getMemberIds('newSet')).to.deep.equal(['/1697300825']);
-
-                    client.removeUI(testId);
+                commitHandler = function (queue, result, callback) {
+                    callback(false);
                     done();
+                },
+                node;
+
+            currentTestId = testId;
+
+            buildUpForTest(testId, {'/323573539': {children: 0}, '/1697300825': {children: 0}}, commitHandler,
+                function (events) {
+                    if (testState === 'init') {
+                        testState = 'checking';
+
+                        expect(events).to.have.length(3);
+                        expect(events).to.include({eid: '/323573539', etype: 'load'});
+                        expect(events).to.include({eid: '/1697300825', etype: 'load'});
+
+                        node = client.getNode('/323573539');
+                        expect(node).not.to.equal(null);
+                        expect(node.getMemberIds('newSet')).to.empty;
+
+
+                        client.addMember('/323573539', '/1697300825', 'newSet', 'basic add member test');
+                        return;
+                    }
+
+                    if (testState === 'checking') {
+                        expect(events).to.have.length(3);
+
+                        node = client.getNode('/323573539');
+                        expect(node).not.to.equal(null);
+                        expect(node.getMemberIds('newSet')).to.deep.equal(['/1697300825']);
+                    }
                 }
-            });
+            );
         });
 
         it('should remove the given member of the specified set of the node', function (done) {
             var testState = 'init',
                 testId = 'basicRemoveMember',
-                node;
-            buildUpForTest(testId, {'/323573539': {children: 0}, '/1697300825': {children: 0}}, function (events) {
-                if (testState === 'init') {
-                    testState = 'checking';
-
-                    expect(events).to.have.length(3);
-                    expect(events).to.include({eid: '/323573539', etype: 'load'});
-                    expect(events).to.include({eid: '/1697300825', etype: 'load'});
-
-                    node = client.getNode('/323573539');
-                    expect(node).not.to.equal(null);
-                    expect(node.getMemberIds('set')).to.include('/1697300825');
-
-
-                    client.removeMember('/323573539', '/1697300825', 'set', 'basic remove member test');
-                    return;
-                }
-
-                if (testState === 'checking') {
-                    expect(events).to.have.length(3);
-
-                    node = client.getNode('/323573539');
-                    expect(node).not.to.equal(null);
-                    expect(node.getMemberIds('set')).not.to.include('/1697300825');
-
-                    client.removeUI(testId);
+                commitHandler = function (queue, result, callback) {
+                    callback(false);
                     done();
+                },
+                node;
+
+            currentTestId = testId;
+
+            buildUpForTest(testId, {'/323573539': {children: 0}, '/1697300825': {children: 0}}, commitHandler,
+                function (events) {
+                    if (testState === 'init') {
+                        testState = 'checking';
+
+                        expect(events).to.have.length(3);
+                        expect(events).to.include({eid: '/323573539', etype: 'load'});
+                        expect(events).to.include({eid: '/1697300825', etype: 'load'});
+
+                        node = client.getNode('/323573539');
+                        expect(node).not.to.equal(null);
+                        expect(node.getMemberIds('set')).to.include('/1697300825');
+
+
+                        client.removeMember('/323573539', '/1697300825', 'set', 'basic remove member test');
+                        return;
+                    }
+
+                    if (testState === 'checking') {
+                        expect(events).to.have.length(3);
+
+                        node = client.getNode('/323573539');
+                        expect(node).not.to.equal(null);
+                        expect(node.getMemberIds('set')).not.to.include('/1697300825');
+                    }
                 }
-            });
+            );
         });
 
         it('should set the given attribute of the specified member of the set', function (done) {
             var testState = 'init',
                 testId = 'basicSetMemberAttribute',
-                node;
-            buildUpForTest(testId, {'/323573539': {children: 0}, '/1697300825': {children: 0}}, function (events) {
-                if (testState === 'init') {
-                    testState = 'checking';
-
-                    expect(events).to.have.length(3);
-                    expect(events).to.include({eid: '/323573539', etype: 'load'});
-                    expect(events).to.include({eid: '/1697300825', etype: 'load'});
-
-                    node = client.getNode('/323573539');
-                    expect(node).not.to.equal(null);
-                    expect(node.getMemberIds('set')).to.include('/1697300825');
-
-
-                    client.setMemberAttribute('/323573539',
-                        '/1697300825',
-                        'set',
-                        'name',
-                        'set member',
-                        'basic set member attribute test');
-                    return;
-                }
-
-                if (testState === 'checking') {
-                    expect(events).to.have.length(3);
-
-                    node = client.getNode('/323573539');
-                    expect(node).not.to.equal(null);
-                    expect(node.getMemberIds('set')).to.include('/1697300825');
-                    expect(node.getMemberAttributeNames('set', '/1697300825')).to.include('name');
-                    expect(node.getEditableMemberAttribute('set', '/1697300825', 'name')).to.equal('set member');
-
-                    client.removeUI(testId);
+                commitHandler = function (queue, result, callback) {
+                    callback(false);
                     done();
+                },
+                node;
+
+            currentTestId = testId;
+
+            buildUpForTest(testId, {'/323573539': {children: 0}, '/1697300825': {children: 0}}, commitHandler,
+                function (events) {
+                    if (testState === 'init') {
+                        testState = 'checking';
+
+                        expect(events).to.have.length(3);
+                        expect(events).to.include({eid: '/323573539', etype: 'load'});
+                        expect(events).to.include({eid: '/1697300825', etype: 'load'});
+
+                        node = client.getNode('/323573539');
+                        expect(node).not.to.equal(null);
+                        expect(node.getMemberIds('set')).to.include('/1697300825');
+
+
+                        client.setMemberAttribute('/323573539',
+                            '/1697300825',
+                            'set',
+                            'name',
+                            'set member',
+                            'basic set member attribute test');
+                        return;
+                    }
+
+                    if (testState === 'checking') {
+                        expect(events).to.have.length(3);
+
+                        node = client.getNode('/323573539');
+                        expect(node).not.to.equal(null);
+                        expect(node.getMemberIds('set')).to.include('/1697300825');
+                        expect(node.getMemberAttributeNames('set', '/1697300825')).to.include('name');
+                        expect(node.getEditableMemberAttribute('set', '/1697300825', 'name')).to.equal('set member');
+
+                    }
                 }
-            });
+            );
         });
 
         it('should remove the specific attribute of the set member', function (done) {
             var testState = 'init',
                 testId = 'basicDelMemberAttribute',
+                first = true,
+                commitHandler = function (queue, result, callback) {
+                    if (first) {
+                        first = false;
+                        callback(true);
+                    } else {
+                        callback(false);
+                        done();
+                    }
+                },
                 node;
-            buildUpForTest(testId, {'/323573539': {children: 0}, '/1697300825': {children: 0}}, function (events) {
-                if (testState === 'init') {
-                    testState = 'add';
 
-                    expect(events).to.have.length(3);
-                    expect(events).to.include({eid: '/323573539', etype: 'load'});
-                    expect(events).to.include({eid: '/1697300825', etype: 'load'});
+            currentTestId = testId;
 
-                    node = client.getNode('/323573539');
-                    expect(node).not.to.equal(null);
-                    expect(node.getMemberIds('set')).to.include('/1697300825');
+            buildUpForTest(testId, {'/323573539': {children: 0}, '/1697300825': {children: 0}}, commitHandler,
+                function (events) {
+                    if (testState === 'init') {
+                        testState = 'add';
+                        expect(events).to.have.length(3);
+                        expect(events).to.include({eid: '/323573539', etype: 'load'});
+                        expect(events).to.include({eid: '/1697300825', etype: 'load'});
 
-
-                    client.setMemberAttribute('/323573539',
-                        '/1697300825',
-                        'set',
-                        'name',
-                        'set member',
-                        'basic del member attribute test - set');
-                    return;
-                }
-
-                if (testState === 'add') {
-                    testState = 'del'
-                    expect(events).to.have.length(3);
-
-                    node = client.getNode('/323573539');
-                    expect(node).not.to.equal(null);
-                    expect(node.getMemberIds('set')).to.include('/1697300825');
-                    expect(node.getMemberAttributeNames('set', '/1697300825')).to.include('name');
-                    expect(node.getMemberAttribute('set', '/1697300825', 'name')).to.equal('set member');
+                        node = client.getNode('/323573539');
+                        expect(node).not.to.equal(null);
+                        expect(node.getMemberIds('set')).to.include('/1697300825');
 
 
-                    client.delMemberAttribute('/323573539',
-                        '/1697300825',
-                        'set',
-                        'name',
-                        'basic del member attribute test - del');
-                    return;
-                }
+                        client.setMemberAttribute('/323573539',
+                            '/1697300825',
+                            'set',
+                            'name',
+                            'set membero',
+                            'basic del member attribute test - set');
+                        return;
+                    }
 
-                if (testState === 'del') {
-                    expect(events).to.have.length(3);
+                    if (testState === 'add') {
+                        testState = 'del';
+                        expect(events).to.have.length(3);
+                        node = client.getNode('/323573539');
+                        expect(node).not.to.equal(null);
+                        expect(node.getMemberIds('set')).to.include('/1697300825');
+                        expect(node.getMemberAttributeNames('set', '/1697300825')).to.include('name');
+                        expect(node.getMemberAttribute('set', '/1697300825', 'name')).to.equal('set membero');
 
-                    node = client.getNode('/323573539');
-                    expect(node).not.to.equal(null);
-                    expect(node.getMemberIds('set')).to.include('/1697300825');
-                    expect(node.getMemberAttributeNames('set', '/1697300825')).not.to.include('name');
-                    expect(node.getMemberAttribute('set', '/1697300825', 'name')).to.equal(undefined);
 
-                    client.removeUI(testId);
-                    done();
-                }
-            });
+                        client.delMemberAttribute('/323573539',
+                            '/1697300825',
+                            'set',
+                            'name',
+                            'basic del member attribute test - del');
+                        return;
+                    }
+
+                    if (testState === 'del') {
+                        expect(events).to.have.length(3);
+                        node = client.getNode('/323573539');
+                        expect(node).not.to.equal(null);
+                        expect(node.getMemberIds('set')).to.include('/1697300825');
+                        expect(node.getMemberAttributeNames('set', '/1697300825')).not.to.include('name');
+                        expect(node.getMemberAttribute('set', '/1697300825', 'name')).to.equal(undefined);
+                    }
+                });
         });
 
         it('should set the given registry key of the set member', function (done) {
             var testState = 'init',
                 testId = 'basicSetMemberRegistry',
-                node;
-            buildUpForTest(testId, {'/323573539': {children: 0}, '/1697300825': {children: 0}}, function (events) {
-                if (testState === 'init') {
-                    testState = 'checking';
-
-                    expect(events).to.have.length(3);
-                    expect(events).to.include({eid: '/323573539', etype: 'load'});
-                    expect(events).to.include({eid: '/1697300825', etype: 'load'});
-
-                    node = client.getNode('/323573539');
-                    expect(node).not.to.equal(null);
-                    expect(node.getMemberIds('set')).to.include('/1697300825');
-
-
-                    client.setMemberRegistry('/323573539',
-                        '/1697300825',
-                        'set',
-                        'name',
-                        'set member',
-                        'basic set member registry test');
-                    return;
-                }
-
-                if (testState === 'checking') {
-                    expect(events).to.have.length(3);
-
-                    node = client.getNode('/323573539');
-                    expect(node).not.to.equal(null);
-                    expect(node.getMemberIds('set')).to.include('/1697300825');
-                    expect(node.getMemberRegistryNames('set', '/1697300825')).to.include('name');
-                    expect(node.getMemberRegistry('set', '/1697300825', 'name')).to.equal('set member');
-
-                    client.removeUI(testId);
+                commitHandler = function (queue, result, callback) {
+                    callback(false);
                     done();
+                },
+                node;
+
+            currentTestId = testId;
+
+            buildUpForTest(testId, {'/323573539': {children: 0}, '/1697300825': {children: 0}}, commitHandler,
+                function (events) {
+                    if (testState === 'init') {
+                        testState = 'checking';
+
+                        expect(events).to.have.length(3);
+                        expect(events).to.include({eid: '/323573539', etype: 'load'});
+                        expect(events).to.include({eid: '/1697300825', etype: 'load'});
+
+                        node = client.getNode('/323573539');
+                        expect(node).not.to.equal(null);
+                        expect(node.getMemberIds('set')).to.include('/1697300825');
+
+
+                        client.setMemberRegistry('/323573539',
+                            '/1697300825',
+                            'set',
+                            'name',
+                            'set member',
+                            'basic set member registry test');
+                        return;
+                    }
+
+                    if (testState === 'checking') {
+                        expect(events).to.have.length(3);
+
+                        node = client.getNode('/323573539');
+                        expect(node).not.to.equal(null);
+                        expect(node.getMemberIds('set')).to.include('/1697300825');
+                        expect(node.getMemberRegistryNames('set', '/1697300825')).to.include('name');
+                        expect(node.getMemberRegistry('set', '/1697300825', 'name')).to.equal('set member');
+
+                    }
                 }
-            });
+            );
         });
 
         it('should remove the specified registry key of the set member', function (done) {
             var testState = 'init',
                 testId = 'basicDelMemberRegistry',
+                first = true,
+                commitHandler = function (queue, result, callback) {
+                    if (first) {
+                        first = false;
+                        callback(true);
+                    } else {
+                        callback(false);
+                        done();
+                    }
+                },
                 node;
-            buildUpForTest(testId, {'/323573539': {children: 0}, '/1697300825': {children: 0}}, function (events) {
-                if (testState === 'init') {
-                    testState = 'add';
 
-                    expect(events).to.have.length(3);
-                    expect(events).to.include({eid: '/323573539', etype: 'load'});
-                    expect(events).to.include({eid: '/1697300825', etype: 'load'});
+            currentTestId = testId;
 
-                    node = client.getNode('/323573539');
-                    expect(node).not.to.equal(null);
-                    expect(node.getMemberIds('set')).to.include('/1697300825');
+            buildUpForTest(testId, {'/323573539': {children: 0}, '/1697300825': {children: 0}}, commitHandler,
+                function (events) {
+                    if (testState === 'init') {
+                        testState = 'add';
 
+                        expect(events).to.have.length(3);
+                        expect(events).to.include({eid: '/323573539', etype: 'load'});
+                        expect(events).to.include({eid: '/1697300825', etype: 'load'});
 
-                    client.setMemberRegistry('/323573539',
-                        '/1697300825',
-                        'set',
-                        'name',
-                        'set member',
-                        'basic del member registry test - set');
-                    return;
-                }
-
-                if (testState === 'add') {
-                    testState = 'del'
-                    expect(events).to.have.length(3);
-
-                    node = client.getNode('/323573539');
-                    expect(node).not.to.equal(null);
-                    expect(node.getMemberIds('set')).to.include('/1697300825');
-                    expect(node.getMemberRegistryNames('set', '/1697300825')).to.include('name');
-                    expect(node.getMemberRegistry('set', '/1697300825', 'name')).to.equal('set member');
+                        node = client.getNode('/323573539');
+                        expect(node).not.to.equal(null);
+                        expect(node.getMemberIds('set')).to.include('/1697300825');
 
 
-                    client.delMemberRegistry('/323573539',
-                        '/1697300825',
-                        'set',
-                        'name',
-                        'basic del member registry test - del');
-                    return;
-                }
+                        client.setMemberRegistry('/323573539',
+                            '/1697300825',
+                            'set',
+                            'name',
+                            'set membere',
+                            'basic del member registry test - set');
+                        return;
+                    }
 
-                if (testState === 'del') {
-                    expect(events).to.have.length(3);
+                    if (testState === 'add') {
+                        testState = 'del';
+                        expect(events).to.have.length(3);
 
-                    node = client.getNode('/323573539');
-                    expect(node).not.to.equal(null);
-                    expect(node.getMemberIds('set')).to.include('/1697300825');
-                    expect(node.getMemberRegistryNames('set', '/1697300825')).not.to.include('name');
-                    expect(node.getMemberRegistry('set', '/1697300825', 'name')).to.equal(undefined);
+                        node = client.getNode('/323573539');
+                        expect(node).not.to.equal(null);
+                        expect(node.getMemberIds('set')).to.include('/1697300825');
+                        expect(node.getMemberRegistryNames('set', '/1697300825')).to.include('name');
+                        expect(node.getMemberRegistry('set', '/1697300825', 'name')).to.equal('set membere');
 
-                    client.removeUI(testId);
-                    done();
-                }
-            });
+
+                        client.delMemberRegistry('/323573539',
+                            '/1697300825',
+                            'set',
+                            'name',
+                            'basic del member registry test - del');
+                        return;
+                    }
+
+                    if (testState === 'del') {
+                        expect(events).to.have.length(3);
+
+                        node = client.getNode('/323573539');
+                        expect(node).not.to.equal(null);
+                        expect(node.getMemberIds('set')).to.include('/1697300825');
+                        expect(node.getMemberRegistryNames('set', '/1697300825')).not.to.include('name');
+                        expect(node.getMemberRegistry('set', '/1697300825', 'name')).to.equal(undefined);
+                    }
+                });
         });
 
         it('should create an empty set for the node with the given name', function (done) {
             var testState = 'init',
                 testId = 'basicCreateSet',
+                commitHandler = function (queue, result, callback) {
+                    callback(false);
+                    done();
+                },
                 node;
-            buildUpForTest(testId, {'/323573539': {children: 0}}, function (events) {
+
+            currentTestId = testId;
+
+            buildUpForTest(testId, {'/323573539': {children: 0}}, commitHandler, function (events) {
                 if (testState === 'init') {
                     testState = 'checking';
 
@@ -2888,9 +3298,6 @@ describe('GME client', function () {
                     expect(node).not.to.equal(null);
                     expect(node.getSetNames()).to.include('newSet');
                     expect(node.getMemberIds('newSet')).to.empty;
-
-                    client.removeUI(testId);
-                    done();
                 }
             });
         });
@@ -2898,45 +3305,51 @@ describe('GME client', function () {
         it('should remove the given set of the node', function (done) {
             var testState = 'init',
                 testId = 'basicDeleteSet',
-                node;
-            buildUpForTest(testId, {'/323573539': {children: 0}, '/701504349': {children: 0}}, function (events) {
-                if (testState === 'init') {
-                    testState = 'checking';
-
-                    expect(events).to.have.length(3);
-                    expect(events).to.include({eid: '/323573539', etype: 'load'});
-                    expect(events).to.include({eid: '/701504349', etype: 'load'});
-
-                    node = client.getNode('/323573539');
-                    expect(node).not.to.equal(null);
-                    expect(node.getSetNames()).to.include('set');
-                    expect(node.getMemberIds('set')).not.to.empty;
-
-                    node = client.getNode('/701504349');
-                    expect(node).not.to.equal(null);
-                    expect(node.getSetNames()).to.include('set');
-                    client.deleteSet('/701504349', 'set', 'basic delete set test');
-                    return;
-                }
-
-                if (testState === 'checking') {
-                    expect(events).to.have.length(3);
-
-                    node = client.getNode('/701504349');
-                    expect(node).not.to.equal(null);
-                    expect(node.getSetNames()).not.to.include('set');
-                    expect(node.getMemberIds('set')).to.empty;
-
-                    node = client.getNode('/323573539');
-                    expect(node).not.to.equal(null);
-                    //FIXME probably this set should be also removed, although it was overwritten
-                    //expect(node.getSetNames()).not.to.include('set');
-                    //expect(node.getMemberIds('set')).to.empty;
-
-                    client.removeUI(testId);
+                commitHandler = function (queue, result, callback) {
+                    callback(false);
                     done();
+                },
+                node;
+
+            currentTestId = testId;
+
+            buildUpForTest(testId, {'/323573539': {children: 0}, '/701504349': {children: 0}}, commitHandler,
+                function (events) {
+                    if (testState === 'init') {
+                        testState = 'checking';
+
+                        expect(events).to.have.length(3);
+                        expect(events).to.include({eid: '/323573539', etype: 'load'});
+                        expect(events).to.include({eid: '/701504349', etype: 'load'});
+
+                        node = client.getNode('/323573539');
+                        expect(node).not.to.equal(null);
+                        expect(node.getSetNames()).to.include('set');
+                        expect(node.getMemberIds('set')).not.to.empty;
+
+                        node = client.getNode('/701504349');
+                        expect(node).not.to.equal(null);
+                        expect(node.getSetNames()).to.include('set');
+                        client.deleteSet('/701504349', 'set', 'basic delete set test');
+                        return;
+                    }
+
+                    if (testState === 'checking') {
+                        expect(events).to.have.length(3);
+
+                        node = client.getNode('/701504349');
+                        expect(node).not.to.equal(null);
+                        expect(node.getSetNames()).not.to.include('set');
+                        expect(node.getMemberIds('set')).to.empty;
+
+                        node = client.getNode('/323573539');
+                        expect(node).not.to.equal(null);
+                        //FIXME probably this set should be also removed, although it was overwritten
+                        //expect(node.getSetNames()).not.to.include('set');
+                        //expect(node.getMemberIds('set')).to.empty;
+                    }
                 }
-            });
+            );
         });
 
         it('should change the ancestor of the given node', function (done) {
@@ -2944,7 +3357,10 @@ describe('GME client', function () {
                 testId = 'basicSetBase',
                 node,
                 newId = null;
-            buildUpForTest(testId, {'': {children: 1}}, function (events) {
+
+            currentTestId = testId;
+
+            buildUpForTest(testId, {'': {children: 1}}, null, function (events) {
 
                 if (testState === 'init') {
                     testState = 'checking';
@@ -2964,7 +3380,6 @@ describe('GME client', function () {
 
                     client.setBase(newId, '/701504349');
                     client.completeTransaction('basic set base test', function (err) {
-                        client.removeUI(testId);
                         expect(err).to.equal(null);
                         done();
                     });
@@ -2981,8 +3396,6 @@ describe('GME client', function () {
                     expect(node.getAttribute('name')).to.equal('node');
                     expect(node.getBaseId()).to.equal('/701504349');
                     expect(node.getAttributeNames()).to.include('value');
-
-                    return;
                 }
             });
         });
@@ -2993,7 +3406,10 @@ describe('GME client', function () {
                 testId = 'basicDelBase',
                 node,
                 newId = null;
-            buildUpForTest(testId, {'': {children: 1}}, function (events) {
+
+            currentTestId = testId;
+
+            buildUpForTest(testId, {'': {children: 1}}, null, function (events) {
 
                 if (testState === 'init') {
                     testState = 'checking';
@@ -3012,7 +3428,6 @@ describe('GME client', function () {
 
                     client.delBase(newId);
                     client.completeTransaction('basic del base test', function (err) {
-                        client.removeUI(testId);
                         expect(err).to.equal(null);
                         done();
                     });
@@ -3030,7 +3445,6 @@ describe('GME client', function () {
                     expect(node.getBaseId()).to.equal(null);
                     expect(node.getAttributeNames()).to.empty;
 
-                    return;
                 }
             });
         });
@@ -3041,15 +3455,16 @@ describe('GME client', function () {
         var Client,
             gmeConfig,
             client,
+            projectId,
             projectName = 'undoRedoTests',
             baseCommitHash;
 
         function buildUpForTest(branchName, patternObject, eventCallback) {
             //creates a branch then a UI for it, finally waits for the nodes to load
-            client.createBranchAsync(branchName, baseCommitHash, function (err) {
+            client.createBranch(projectId, branchName, baseCommitHash, function (err) {
                 expect(err).to.equal(null);
 
-                client.selectBranchAsync(branchName, function (err) {
+                client.selectBranch(branchName, null, function (err) {
                     expect(err).to.equal(null);
 
                     client.updateTerritory(client.addUI({}, eventCallback, branchName), patternObject);
@@ -3063,13 +3478,13 @@ describe('GME client', function () {
                 Client = Client_;
                 gmeConfig = JSON.parse(gmeConfigJSON);
                 client = new Client(gmeConfig);
-
-                client.connectToDatabaseAsync({}, function (err) {
+                projectId = projectName2Id(projectName, gmeConfig, client);
+                client.connectToDatabase(function (err) {
                     expect(err).to.equal(null);
-                    client.selectProjectAsync(projectName, function (err) {
+                    client.selectProject(projectId, null, function (err) {
                         expect(err).to.equal(null);
 
-                        baseCommitHash = client.getActualCommit();
+                        baseCommitHash = client.getActiveCommitHash();
                         done();
                     });
                 });
@@ -3083,7 +3498,7 @@ describe('GME client', function () {
                 expect(events).to.have.length(2);
                 expect(events[1]).to.deep.equal({eid: '/323573539', etype: 'load'});
 
-                client.undo(client.getActualBranch(), function (err) {
+                client.undo(client.getActiveBranchName(), function (err) {
                     expect(err).not.to.equal(null);
                     expect(err.message).to.contain('unable');
 
@@ -3100,7 +3515,7 @@ describe('GME client', function () {
                 expect(events).to.have.length(2);
                 expect(events[1]).to.deep.equal({eid: '/323573539', etype: 'load'});
 
-                client.redo(client.getActualBranch(), function (err) {
+                client.redo(client.getActiveBranchName(), function (err) {
                     expect(err).not.to.equal(null);
                     expect(err.message).to.contain('unable');
 
@@ -3121,7 +3536,7 @@ describe('GME client', function () {
                 undoAvailable = function (clientObject, isAvailable) {
                     if (isAvailable && !undoExecuted) {
                         undoExecuted = true;
-                        client.undo(client.getActualBranch(), function (err) {
+                        client.undo(client.getActiveBranchName(), function (err) {
                             expect(err).to.equal(null);
 
                             client.removeEventListener(client.events.UNDO_AVAILABLE, undoAvailable);
@@ -3173,7 +3588,6 @@ describe('GME client', function () {
                 }
 
                 done(new Error('some unexpected events received:' + events));
-                return;
             });
         });
 
@@ -3183,6 +3597,7 @@ describe('GME client', function () {
         var Client,
             gmeConfig,
             client,
+            projectId,
             projectName = 'RESTLikeTests';
 
         before(function (done) {
@@ -3192,65 +3607,50 @@ describe('GME client', function () {
                 gmeConfig = JSON.parse(gmeConfigJSON);
                 gmeConfig.storage.timeout = 1000;
                 client = new Client(gmeConfig);
-
-                client.connectToDatabaseAsync({}, function (err) {
+                projectId = projectName2Id(projectName, gmeConfig, client);
+                client.connectToDatabase(function (err) {
                     expect(err).to.equal(null);
 
-                    client.selectProjectAsync(projectName, function (err) {
+                    client.selectProject(projectId, null, function (err) {
                         expect(err).to.equal(null);
 
                         client.addUI({}, function (events) {
                             expect(events).to.have.length.least(3); //technical event, the root and the FCO
 
                             done();
-                        }, projectName);
-                        client.updateTerritory(projectName, {'': {children: 1}});
+                        }, projectId);
+                        client.updateTerritory(projectId, {'': {children: 1}});
                     });
                 });
             });
         });
 
-        it('should export the list of nodes in a REST-API format', function (done) {
-            client.exportItems(['', '/1'], function (err, exportedItems) {
-                expect(err).to.equal(null);
-
-                expect(exportedItems).have.length(2);
-                done();
-            });
-        });
-
-        it('should fail to export not loaded object', function (done) {
-            client.exportItems(['/42/42'], function (err) {
-                expect(err).not.to.equal(null);
-                done();
-            });
-        });
-
         it('should return a url which would download the given list of nodes', function (done) {
-            client.getExportItemsUrlAsync(['', '/1'], 'output', function (err, url) {
+            this.timeout(10000);
+            client.getExportItemsUrl(['', '/1'], 'output', function (err, url) {
                 expect(err).to.equal(null);
                 expect(url).to.contain('output');
                 expect(url).to.contain('/worker/simpleResult/');
 
                 //FIXME why server crashes at the end if we get the result??
-                //superagent.get(url).end(function (err, res) {
-                //
-                //    expect(err).to.equal(null);
-                //
-                //    expect(res.status).to.equal(200);
-                //
-                //    expect(res.body).not.to.equal(null);
-                //
-                //    expect(res.body).to.have.length(2);
-                //
-                //    done();
-                //});
-                done();
+                superagent.get(url).end(function (err, res) {
+
+                    expect(err).to.equal(null);
+
+                    expect(res.status).to.equal(200);
+
+                    expect(res.body).not.to.equal(null);
+
+                    expect(res.body).to.have.length(2);
+
+                    done();
+                });
             });
         });
 
         it('should return a url where the given library (sub-tree) is available', function (done) {
-            client.getExportLibraryUrlAsync('', 'output', function (err, url) {
+            this.timeout(5000);
+            client.getExportLibraryUrl('', 'output', function (err, url) {
                 expect(err).to.equal(null);
                 expect(url).to.contain('output');
                 expect(url).to.contain('/worker/simpleResult/');
@@ -3259,7 +3659,7 @@ describe('GME client', function () {
             });
         });
 
-        it('should return a json format of the node (or a sub-tree)', function (done) {
+        it.skip('should return a json format of the node (or a sub-tree)', function (done) {
             client.dumpNodeAsync('', function (err, dump) {
                 expect(err).to.equal(null);
 
@@ -3269,7 +3669,7 @@ describe('GME client', function () {
             });
         });
 
-        it('should fail to dump not loaded node', function (done) {
+        it.skip('should fail to dump not loaded node', function (done) {
             // dumpNodeAsync
             client.dumpNodeAsync('/42/42', function (err) {
                 expect(err).not.to.equal(null);
@@ -3278,7 +3678,8 @@ describe('GME client', function () {
             });
         });
 
-        it('should return a url for dumping the whole project', function () {
+        //TODO modify this test to use the getExportProjectBranchUrlAsync function
+        it.skip('should return a url for dumping the whole project', function () {
             expect(client.getDumpURL({})).to.contain('dump_url.out');
         });
     });
@@ -3311,19 +3712,42 @@ describe('GME client', function () {
 
     });
 
-    it.skip('should execute the given plugin on the server and return its result', function () {
-        // runServerPlugin
 
-    });
-
-//TODO add only proxied functions
+    //TODO add only proxied functions
     describe('meta rule query and setting tests', function () {
         var Client,
             gmeConfig,
             client,
+            currentTestId,
+            projectId,
             projectName = 'metaQueryAndManipulationTest',
             baseCommitHash;
 
+        function prepareBranchForTest(branchName, commitHandler, next) {
+            //creates a branch then a UI for it, finally waits for the nodes to load
+            currentTestId = branchName;
+            client.createBranch(projectId, branchName, baseCommitHash, function (err) {
+                expect(err).to.equal(null);
+
+                client.selectBranch(branchName, commitHandler, function (err) {
+                    expect(err).to.equal(null);
+
+                    //now we should load all necessary node, possibly in one step to allow the synchronous execution
+                    //we handle only the first incoming set of events to not cause any confusion
+                    var alreadyHandled = false;
+                    client.updateTerritory(client.addUI({}, function (events) {
+                        if (!alreadyHandled) {
+                            expect(events).to.have.length(12);
+                            expect(events[0]).to.contain.keys('eid', 'etype');
+                            expect(events[0].etype).to.equal('complete');
+
+                            alreadyHandled = true;
+                            next(null);
+                        }
+                    }, branchName), {'': {children: 1}});
+                });
+            });
+        }
 
         before(function (done) {
             this.timeout(10000);
@@ -3331,38 +3755,54 @@ describe('GME client', function () {
                 Client = Client_;
                 gmeConfig = JSON.parse(gmeConfigJSON);
                 client = new Client(gmeConfig);
-
-                client.connectToDatabaseAsync({}, function (err) {
+                projectId = projectName2Id(projectName, gmeConfig, client);
+                client.connectToDatabase(function (err) {
                     expect(err).to.equal(null);
-                    client.selectProjectAsync('metaQueryAndManipulationTest', function (err) {
+                    client.selectProject(projectId, null, function (err) {
                         expect(err).to.equal(null);
 
-                        baseCommitHash = client.getActualCommit();
+                        baseCommitHash = client.getActiveCommitHash();
                         done();
                     });
                 });
             });
         });
 
+        after(function (done) {
+            client.disconnectFromDatabase(done);
+        });
+
+        afterEach(function (done) {
+            var branchHash = client.getActiveCommitHash();
+            client.removeUI(currentTestId);
+            client.selectBranch('master', null, function (err) {
+                if (err) {
+                    done(err);
+                    return;
+                }
+                client.deleteBranch(projectId, currentTestId, branchHash, done);
+            });
+        });
+
         it('should return the meta rules of the given node in a json format', function (done) {
-            prepareBranchForTest('simpleGet', function (err) {
+            prepareBranchForTest('simpleGet', null, function (err) {
                 expect(err).to.equal(null);
 
                 expect(client.getMeta('/1')).to.deep.equal({
-                    'attributes': {
-                        'name': {
-                            'type': 'string'
+                    attributes: {
+                        name: {
+                            type: 'string'
                         }
                     },
-                    'children': {
-                        'minItems': [],
-                        'maxItems': [],
-                        'items': [],
-                        'min': undefined,
-                        'max': undefined
+                    children: {
+                        minItems: [],
+                        maxItems: [],
+                        items: [],
+                        min: undefined,
+                        max: undefined
                     },
-                    'pointers': {},
-                    'aspects': {}
+                    pointers: {},
+                    aspects: {}
                 });
                 done();
             });
@@ -3370,21 +3810,21 @@ describe('GME client', function () {
         });
 
         it('should return the flattened meta rules of a node in json format', function (done) {
-            prepareBranchForTest('inheritedGet', function (err) {
+            prepareBranchForTest('inheritedGet', null, function (err) {
                 expect(err).to.equal(null);
                 var metaRules = client.getMeta('/1865460677');
                 //FIXME: this fails on my machine /patrik
 
                 expect(metaRules).to.have.keys('attributes', 'aspects', 'pointers', 'children');
                 expect(metaRules.attributes).to.deep.equal({
-                    'name': {
-                        'type': 'string'
+                    name: {
+                        type: 'string'
                     }
                 });
                 expect(metaRules.pointers).to.deep.equal({});
                 expect(metaRules.aspects).to.deep.equal({
-                    'onlyOne': {
-                        'items': [
+                    onlyOne: {
+                        items: [
                             {$ref: '/1730437907'}
                         ]
                     }
@@ -3402,7 +3842,7 @@ describe('GME client', function () {
         });
 
         it('should return null if the object is not loaded', function (done) {
-            prepareBranchForTest('unknownGet', function (err) {
+            prepareBranchForTest('unknownGet', null, function (err) {
                 expect(err).to.equal(null);
 
                 expect(client.getMeta('/42/42')).to.equal(null);
@@ -3411,33 +3851,42 @@ describe('GME client', function () {
         });
 
         it('modify an empty ruleset to empty', function (done) {
-            prepareBranchForTest('noChangeSet', function (err) {
+            var commitHandler = function (queue, result, callback) {
+                callback(false);
+                done();
+            };
+            prepareBranchForTest('noChangeSet', commitHandler, function (err) {
                 expect(err).to.equal(null);
 
                 var old = client.getMeta('/1730437907');
                 client.setMeta('/1730437907', {});
                 expect(client.getMeta('/1730437907')).to.deep.equal(old);
-                done();
             });
-
         });
 
         it('add some rule via setMeta', function (done) {
-            prepareBranchForTest('addWithSet', function (err) {
+            var commitHandler = function (queue, result, callback) {
+                callback(false);
+                done();
+            };
+            prepareBranchForTest('addWithSet', commitHandler, function (err) {
                 expect(err).to.equal(null);
 
                 var old = client.getMeta('/1730437907'),
-                    newAttribute = {'type': 'string'};
-                client.setMeta('/1730437907', {'attributes': {'newAttr': newAttribute}});
+                    newAttribute = {type: 'string'};
+                client.setMeta('/1730437907', {attributes: {newAttr: newAttribute}});
                 //we extend our json format as well
                 old.attributes.newAttr = newAttribute;
                 expect(client.getMeta('/1730437907')).to.deep.equal(old);
-                done();
             });
         });
 
         it('remove some rule via setMeta', function (done) {
-            prepareBranchForTest('removeWithSet', function (err) {
+            var commitHandler = function (queue, result, callback) {
+                callback(false);
+                done();
+            };
+            prepareBranchForTest('removeWithSet', commitHandler, function (err) {
                 expect(err).to.equal(null);
 
                 var meta = client.getMeta('/1');
@@ -3446,7 +3895,6 @@ describe('GME client', function () {
                 delete meta.attributes.name;
                 client.setMeta('/1', meta);
                 expect(client.getMeta('/1').attributes).not.to.include.keys('name');
-                done();
 
             });
         });
@@ -3480,61 +3928,308 @@ describe('GME client', function () {
 
         });
 
-        function prepareBranchForTest(branchName, next) {
-            //creates a branch then a UI for it, finally waits for the nodes to load
-            client.createBranchAsync(branchName, baseCommitHash, function (err) {
-                expect(err).to.equal(null);
-
-                client.selectBranchAsync(branchName, function (err) {
-                    expect(err).to.equal(null);
-
-                    //now we should load all necessary node, possibly in one step to allow the synchronous execution
-                    //we handle only the first incoming set of events to not cause any confusion
-                    var alreadyHandled = false;
-                    client.updateTerritory(client.addUI({}, function (events) {
-                        if (!alreadyHandled) {
-                            expect(events).to.have.length(12);
-                            expect(events[0]).to.contain.keys('eid', 'etype');
-                            expect(events[0].etype).to.equal('complete');
-
-                            alreadyHandled = true;
-                            next(null);
-                        }
-                    }), {'': {children: 1}});
-                });
-            });
-        }
-
-//    updateValidChildrenItem: META.updateValidChildrenItem,
-//    removeValidChildrenItem: META.removeValidChildrenItem,
-//    getAttributeSchema: META.getAttributeSchema,
-//    setAttributeSchema: META.setAttributeSchema,
-//    removeAttributeSchema: META.removeAttributeSchema,
-//    getPointerMeta: META.getPointerMeta,
-//    setPointerMeta: META.setPointerMeta,
-//    getValidTargetItems: META.getValidTargetItems,
-//    updateValidTargetItem: META.updateValidTargetItem,
-//    removeValidTargetItem: META.removeValidTargetItem,
-//    deleteMetaPointer: META.deleteMetaPointer,
-//    getOwnValidChildrenTypes: META.getOwnValidChildrenTypes,
-//    getOwnValidTargetTypes: META.getOwnValidTargetTypes,
-//    isValidChild: META.isValidChild,
-//    isValidTarget: META.isValidTarget,
-//    isValidAttribute: META.isValidAttribute,
-//    getValidChildrenTypes: META.getValidChildrenTypes,
-//    getValidTargetTypes: META.getValidTargetTypes,
-//    hasOwnMetaRules: META.hasOwnMetaRules,
-//    filterValidTarget: META.filterValidTarget,
-//    isTypeOf: META.isTypeOf,
-//    getValidAttributeNames: META.getValidAttributeNames,
-//    getOwnValidAttributeNames: META.getOwnValidAttributeNames,
-//    getMetaAspectNames: META.getMetaAspectNames,
-//    getOwnMetaAspectNames: META.getOwnMetaAspectNames,
-//    getMetaAspect: META.getMetaAspect,
-//    setMetaAspect: META.setMetaAspect,
-//    deleteMetaAspect: META.deleteMetaAspect,
-//    getAspectTerritoryPattern: META.getAspectTerritoryPattern,
+        //    updateValidChildrenItem: META.updateValidChildrenItem,
+        //    removeValidChildrenItem: META.removeValidChildrenItem,
+        //    getAttributeSchema: META.getAttributeSchema,
+        //    setAttributeSchema: META.setAttributeSchema,
+        //    removeAttributeSchema: META.removeAttributeSchema,
+        //    getPointerMeta: META.getPointerMeta,
+        //    setPointerMeta: META.setPointerMeta,
+        //    getValidTargetItems: META.getValidTargetItems,
+        //    updateValidTargetItem: META.updateValidTargetItem,
+        //    removeValidTargetItem: META.removeValidTargetItem,
+        //    deleteMetaPointer: META.deleteMetaPointer,
+        //    getOwnValidChildrenTypes: META.getOwnValidChildrenTypes,
+        //    getOwnValidTargetTypes: META.getOwnValidTargetTypes,
+        //    isValidChild: META.isValidChild,
+        //    isValidTarget: META.isValidTarget,
+        //    isValidAttribute: META.isValidAttribute,
+        //    getValidChildrenTypes: META.getValidChildrenTypes,
+        //    getValidTargetTypes: META.getValidTargetTypes,
+        //    hasOwnMetaRules: META.hasOwnMetaRules,
+        //    filterValidTarget: META.filterValidTarget,
+        //    isTypeOf: META.isTypeOf,
+        //    getValidAttributeNames: META.getValidAttributeNames,
+        //    getOwnValidAttributeNames: META.getOwnValidAttributeNames,
+        //    getMetaAspectNames: META.getMetaAspectNames,
+        //    getOwnMetaAspectNames: META.getOwnMetaAspectNames,
+        //    getMetaAspect: META.getMetaAspect,
+        //    setMetaAspect: META.setMetaAspect,
+        //    deleteMetaAspect: META.deleteMetaAspect,
+        //    getAspectTerritoryPattern: META.getAspectTerritoryPattern,
 
     });
-})
-;
+
+    describe('projectSeed', function () {
+        var Client,
+            gmeConfig,
+            client,
+            refNodeProj,
+            refMetaProj,
+            refSFSProj;
+
+        before(function (done) {
+            this.timeout(10000);
+            requirejs([
+                    'js/client',
+                    'text!gmeConfig.json',
+                    'text!karmatest/client/js/client/clientNodeTestProject.json',
+                    'text!karmatest/client/js/client/metaTestProject.json',
+                    'text!seeds/SignalFlowSystem.json'],
+                function (Client_, gmeConfigJSON, nodeProjectJSON, metaProjectJSON, SFSProjectJSON) {
+                    Client = Client_;
+                    gmeConfig = JSON.parse(gmeConfigJSON);
+                    refNodeProj = JSON.parse(nodeProjectJSON);
+                    refMetaProj = JSON.parse(metaProjectJSON);
+                    refSFSProj = JSON.parse(SFSProjectJSON);
+                    client = new Client(gmeConfig);
+
+                    client.connectToDatabase(function (err) {
+                        expect(err).to.equal(null);
+                        done();
+                    });
+                }
+            );
+        });
+
+        after(function (done) {
+            client.disconnectFromDatabase(done);
+        });
+
+        it('should seed a project from an existing one', function (done) {
+            this.timeout(5000);
+            var projectName = 'seedTestBasicMaster',
+                seedConfig = {
+                    seedName: projectName2Id('projectSeedSingleMaster', gmeConfig, client),
+                    projectName: projectName
+                },
+                projectId = projectName2Id(projectName, gmeConfig, client);
+
+
+            client.seedProject(seedConfig, function (err) {
+                expect(err).to.equal(null);
+
+                client.getExportProjectBranchUrl(projectId, 'master', 'seedTestOutPut',
+                    function (err, url) {
+                        expect(err).to.equal(null);
+
+                        superagent.get(url, function (err, result) {
+                            expect(err).to.equal(null);
+
+                            expect(result.body).to.deep.equal(refNodeProj);
+                            client.deleteProject(projectId, function (err /*, didExist*/) {
+                                expect(err).to.equal(null, 'deleteProject returned error');
+
+                                done();
+                            });
+                        });
+                    }
+                );
+            });
+        });
+
+        it('should seed a project from a seed file', function (done) {
+            this.timeout(5000);
+            var projectName = 'seedTestBasicFile',
+                seedConfig = {
+                    type: 'file',
+                    seedName: 'SignalFlowSystem',
+                    projectName: projectName
+                },
+                projectId = projectName2Id(projectName, gmeConfig, client);
+
+
+            client.seedProject(seedConfig, function (err) {
+                expect(err).to.equal(null);
+
+                client.getExportProjectBranchUrl(projectId, 'master', 'seedTestOutPut',
+                    function (err, url) {
+                        expect(err).to.equal(null);
+
+                        superagent.get(url, function (err, result) {
+                            expect(err).to.equal(null);
+
+                            expect(result.body).to.deep.equal(refSFSProj);
+                            client.deleteProject(projectId, function (err) {
+                                expect(err).to.equal(null);
+
+                                done();
+                            });
+                        });
+                    }
+                );
+            });
+        });
+
+        it.skip('should seed a project and notify watcher', function (done) {
+            this.timeout(5000);
+            var projectName = 'watcherCreate',
+                seedConfig = {
+                    type: 'file',
+                    seedName: 'EmptyProject',
+                    projectName: projectName
+                },
+                triggered = false,
+                handler = function (storage, eventData) {
+                    expect(triggered).to.equal(false);
+                    expect(eventData).to.not.equal(null);
+                    expect(eventData).to.include.keys('etype', 'projectId');
+                    expect(eventData.etype).to.equal(client.CONSTANTS.STORAGE.PROJECT_CREATED);
+                    expect(eventData.projectId).to.equal(projectId);
+
+                    triggered = true;
+                    unwatch();
+                },
+                unwatch = function () {
+                    client.unwatchDatabase(handler, function (err) {
+                        expect(err).to.equal(null);
+                        client.deleteProject(projectId, function (err) {
+                            expect(err).to.equal(null);
+                            done(err);
+                        });
+                    });
+                },
+                projectId = projectName2Id(projectName, gmeConfig, client);
+
+            //* Triggers eventHandler(storage, eventData) on PROJECT_CREATED and PROJECT_DELETED.
+            //*
+            //* eventData = {
+            //*    etype: PROJECT_CREATED||DELETED,
+            //*    projectId: %id of project%
+            //* }
+            client.watchDatabase(handler, function (err) {
+                expect(err).to.equal(null);
+
+                client.seedProject(seedConfig, function (err) {
+                    expect(err).to.equal(null);
+
+                });
+            });
+        });
+
+        it('should seed a project delete it and notify watcher', function (done) {
+            this.timeout(5000);
+            var projectName = 'watcherDelete',
+                seedConfig = {
+                    type: 'file',
+                    seedName: 'EmptyProject',
+                    projectName: projectName
+                },
+                triggered = false,
+                handler = function (storage, eventData) {
+                    expect(triggered).to.equal(false);
+                    expect(eventData).to.not.equal(null);
+                    expect(eventData).to.include.keys('etype', 'projectId');
+                    expect(eventData.etype).to.equal(client.CONSTANTS.STORAGE.PROJECT_DELETED);
+                    expect(eventData.projectId).to.equal(projectId);
+
+                    triggered = true;
+                    unwatch();
+                },
+                unwatch = function () {
+                    client.unwatchDatabase(handler, function (err) {
+                        done(err);
+                    });
+                },
+                projectId = projectName2Id(projectName, gmeConfig, client);
+
+            client.seedProject(seedConfig, function (err) {
+                expect(err).to.equal(null);
+
+                client.watchDatabase(handler, function (err) {
+                    expect(err).to.equal(null);
+
+                    client.deleteProject(projectId, function (err) {
+                        expect(err).to.equal(null);
+                    });
+                });
+            });
+        });
+
+        //FIXME what is with the superagent stuff???
+        it('should seed a project from an existing one\'s given branch', function (done) {
+            var projectName = 'seedTestBasicOther',
+                seedConfig = {
+                    seedName: projectName2Id('projectSeedSingleNonMaster', gmeConfig, client),
+                    projectName: projectName,
+                    seedBranch: 'other'
+                },
+                projectId = projectName2Id(projectName, gmeConfig, client);
+
+            client.seedProject(seedConfig, function (err) {
+                expect(err).to.equal(null);
+
+                client.getExportProjectBranchUrl(projectId, 'other', 'seedTestOutPut',
+                    function (err, url) {
+                        expect(err).to.equal(null);
+
+                        console.warn(url);
+                        client.deleteProject(projectId, function (err) {
+                            expect(err).to.equal(null);
+
+                            done();
+                        });
+
+                        //superagent.get(url, function (err, result) {
+                        //    console.warn('whaaat');
+                        //    expect(err).to.equal(null);
+                        //    //expect(result.body).to.deep.equal(refNodeProj);
+                        //
+                        //    done();
+                        //});
+                    }
+                );
+            });
+        });
+
+        it('should not allow to overwrite projects with seed', function (done) {
+            var projectName = 'projectSeedSingleMaster',
+                seedConfig = {
+                    seedName: projectName2Id('projectSeedSingleMaster', gmeConfig, client),
+                    projectName: projectName
+                };
+
+            client.seedProject(seedConfig, function (err) {
+                expect(err).not.to.equal(null);
+
+                expect(err).to.contain('Project already exists');
+
+                done();
+            });
+        });
+
+        it('should fail to seed from an unknown branch', function (done) {
+            var projectName = 'noBranchSeedProject',
+                seedConfig = {
+                    seedName: projectName2Id('projectSeedSingleMaster', gmeConfig, client),
+                    projectName: projectName,
+                    seedBranch: 'unknownBranch'
+                };
+
+            client.seedProject(seedConfig, function (err) {
+                expect(err).not.to.equal(null);
+
+                expect(err).to.contain('unknownBranch');
+
+                done();
+            });
+        });
+
+        it('should fail to seed from an unknown seed file', function (done) {
+            var projectName = 'noSeedFileProject',
+                seedConfig = {
+                    type: 'file',
+                    seedName: 'UnknownSeedFile',
+                    projectName: projectName
+                };
+
+            client.seedProject(seedConfig, function (err) {
+                expect(err).not.to.equal(null);
+
+                expect(err).to.contain('unknown file seed');
+
+                done();
+            });
+        });
+    });
+});

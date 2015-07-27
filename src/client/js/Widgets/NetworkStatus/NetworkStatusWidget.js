@@ -1,12 +1,19 @@
 /*globals define, WebGMEGlobal*/
+/*jshint browser: true*/
 
-define(['js/logger',
+/**
+ * @author rkereskenyi / https://github.com/rkereskenyi
+ */
+
+
+define([
+    'js/logger',
     'js/Controls/DropDownMenu',
-    'js/Controls/PopoverBox'], function (Logger,
-                                        DropDownMenu,
-                                        PopoverBox) {
+    'js/Controls/PopoverBox',
+    'js/Constants'
+], function (Logger, DropDownMenu, PopoverBox, CONSTANTS) {
 
-    "use strict";
+    'use strict';
 
     var NetworkStatusWidget,
         ITEM_VALUE_CONNECT = 'connect';
@@ -20,44 +27,49 @@ define(['js/logger',
 
         this._initializeUI();
 
-        this._logger.debug("Created");
+        this._logger.debug('Created');
     };
 
     NetworkStatusWidget.prototype._initializeUI = function () {
-        var self = this;
+        var self = this,
+            initialStatus = this._client.getNetworkStatus();
 
         this._el.empty();
 
         //#1 - NetworkStatus
-        this._ddNetworkStatus = new DropDownMenu({"dropUp": true,
-            "pullRight": true,
-            "size": "micro",
-            "sort": true});
+        this._ddNetworkStatus = new DropDownMenu({
+            dropUp: true,
+            pullRight: true,
+            size: 'micro',
+            sort: true
+        });
         this._ddNetworkStatus.setTitle('NETWORKSTATUS');
 
         this._el.append(this._ddNetworkStatus.getEl());
 
         this._ddNetworkStatus.onItemClicked = function (value) {
             if (value === ITEM_VALUE_CONNECT) {
-                self._client.connect();
+                //self._client.connect();
             }
         };
 
-        this._client.addEventListener(this._client.events.NETWORKSTATUS_CHANGED, function (/*__project, state*/) {
-            self._refreshNetworkStatus();
+        this._client.addEventListener(CONSTANTS.CLIENT.NETWORK_STATUS_CHANGED, function (client, networkStatus) {
+            self._refreshNetworkStatus(networkStatus);
         });
 
-        this._refreshNetworkStatus();
+        this._refreshNetworkStatus(initialStatus);
     };
 
-    NetworkStatusWidget.prototype._refreshNetworkStatus = function () {
-        var status = this._client.getActualNetworkStatus();
-
+    NetworkStatusWidget.prototype._refreshNetworkStatus = function (status) {
+        this._logger.debug('_refreshNetworkStatus', status);
         switch (status) {
-            case this._client.networkStates.CONNECTED:
+            case CONSTANTS.CLIENT.STORAGE.CONNECTED:
                 this._modeConnected();
                 break;
-            case this._client.networkStates.DISCONNECTED:
+            case CONSTANTS.CLIENT.STORAGE.RECONNECTED:
+                this._modeReconnected();
+                break;
+            case CONSTANTS.CLIENT.STORAGE.DISCONNECTED:
                 this._modeDisconnected();
                 break;
         }
@@ -69,7 +81,20 @@ define(['js/logger',
         this._ddNetworkStatus.setColor(DropDownMenu.prototype.COLORS.GREEN);
 
         if (this._disconnected === true) {
-            this._popoverBox.show('Connection to the server has been restored...', this._popoverBox.alertLevels.SUCCESS, true);
+            this._popoverBox.show('Connected to the server',
+                this._popoverBox.alertLevels.SUCCESS, true);
+            delete this._disconnected;
+        }
+    };
+
+    NetworkStatusWidget.prototype._modeReconnected = function () {
+        this._ddNetworkStatus.clear();
+        this._ddNetworkStatus.setTitle('RECONNECTED');
+        this._ddNetworkStatus.setColor(DropDownMenu.prototype.COLORS.GREEN);
+
+        if (this._disconnected === true) {
+            this._popoverBox.show('Connection to the server has been restored...',
+                this._popoverBox.alertLevels.SUCCESS, true);
             delete this._disconnected;
         }
     };
@@ -77,8 +102,10 @@ define(['js/logger',
     NetworkStatusWidget.prototype._modeDisconnected = function () {
         this._ddNetworkStatus.clear();
         this._ddNetworkStatus.setTitle('DISCONNECTED');
-        this._ddNetworkStatus.addItem({"text": 'Connect...',
-            "value": ITEM_VALUE_CONNECT});
+        this._ddNetworkStatus.addItem({
+            text: 'Connect...',
+            value: ITEM_VALUE_CONNECT
+        });
         this._ddNetworkStatus.setColor(DropDownMenu.prototype.COLORS.ORANGE);
 
         this._disconnected = true;

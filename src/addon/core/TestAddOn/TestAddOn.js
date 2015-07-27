@@ -8,8 +8,10 @@
 define(['addon/AddOnBase'], function (AddOnBase) {
 
     'use strict';
-    var TestAddOn = function (Core, storage, gmeConfig) {
-        AddOnBase.call(this, Core, storage, gmeConfig);
+    var TestAddOn = function (Core, storage, gmeConfig, logger, userId) {
+        AddOnBase.call(this, Core, storage, gmeConfig, logger, userId);
+
+        this.numUpdates = 0;
     };
 
     // Prototypal inheritance from AddOnBase.
@@ -23,12 +25,13 @@ define(['addon/AddOnBase'], function (AddOnBase) {
 
     TestAddOn.prototype.update = function (root, callback) {
         this.logger.info('TestAddOn', new Date().getTime(), 'update', this.core.getGuid(root), this.core.getHash(root));
+        this.numUpdates += 1;
         callback(null);
     };
 
     TestAddOn.prototype.query = function (parameters, callback) {
         this.logger.info('TestAddOn', new Date().getTime(), 'query', parameters);
-        callback(null, parameters);
+        callback(null, parameters, this.numUpdates);
     };
 
     TestAddOn.prototype.stop = function (callback) {
@@ -40,10 +43,10 @@ define(['addon/AddOnBase'], function (AddOnBase) {
         });
     };
 
-    TestAddOn.prototype.start = function (parameters, callback) {
-        AddOnBase.prototype.start.call(this, parameters, callback);
-        this.logger.info('TestAddOn', new Date().getTime(), 'start');
-    };
+    //TestAddOn.prototype.start = function (parameters, callback) {
+    //    AddOnBase.prototype.start.call(this, parameters, callback);
+    //    this.logger.info('TestAddOn', new Date().getTime(), 'start');
+    //};
 
     return TestAddOn;
 });

@@ -1,4 +1,3 @@
-/*globals WebGMEGlobal*/
 /*jshint node:true, mocha:true*/
 /**
  * @author pmeijer / https://github.com/pmeijer
@@ -9,8 +8,7 @@ var testFixture = require('../../../_globals.js');
 describe('BlobServer', function () {
     'use strict';
 
-    var gmeConfig = testFixture.getGmeConfig(),
-        agent = testFixture.superagent.agent(),
+    var agent = testFixture.superagent.agent(),
         should = testFixture.should,
         expect = testFixture.expect,
         rimraf = testFixture.rimraf,
@@ -54,9 +52,33 @@ describe('BlobServer', function () {
         });
     });
 
-    it('should return 500 at /rest/blob/metadata/non-existing-hash', function (done) {
+    it('should return 500 at /rest/blob/createMetadata if data is malformed', function (done) {
+        agent.post(serverBaseUrl + '/rest/blob/createMetadata')
+            .type('text')
+            .send('hello')
+            .end(function (err, res) {
+                should.equal(res.status, 500, err);
+                done();
+        });
+    });
+
+    it('should return 404 at /rest/blob/metadata/non-existing-hash', function (done) {
         agent.get(serverBaseUrl + '/rest/blob/metadata/non-existing-hash').end(function (err, res) {
-            should.equal(res.status, 500, err);
+            should.equal(res.status, 404, err);
+            done();
+        });
+    });
+
+    it('should return 404 at /rest/blob/download/non-existing-hash', function (done) {
+        agent.get(serverBaseUrl + '/rest/blob/download/non-existing-hash').end(function (err, res) {
+            should.equal(res.status, 404, err);
+            done();
+        });
+    });
+
+    it('should return 404 at /rest/blob/view/non-existing-hash', function (done) {
+        agent.get(serverBaseUrl + '/rest/blob/view/non-existing-hash').end(function (err, res) {
+            should.equal(res.status, 404, err);
             done();
         });
     });

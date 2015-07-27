@@ -1,22 +1,28 @@
-/*globals define, _, requirejs, WebGMEGlobal*/
-
-/*
+/*globals define, _*/
+/*jshint browser: true*/
+/**
  * STRING CONSTANT DEFINITIONS USED IN CLIENT JAVASCRIPT (INHERITS ALL THE CONSTANST FROM COMMON/CONSTANST.JS)
+ *
+ * @author rkereskenyi / https://github.com/rkereskenyi
  */
 
-define(['underscore', 'common/Constants'], function (underscore, COMMON_CONSTANTS) {
+define([
+    'underscore',
+    'common/Constants',
+    'js/client/constants'
+], function (underscore, COMMON_CONSTANTS, CLIENT_CONSTANTS) {
 
     'use strict';
 
     //define client-only string constants
-    var clientContants = {};
+    var clientConstants = {};
 
     //copy over all the constanst form common/constants.js
-    _.extend(clientContants, COMMON_CONSTANTS, {
+    _.extend(clientConstants, COMMON_CONSTANTS, {
         /*
          * DOM element ID to use for all-over-the-screen-draggable-parent
          */
-        ALL_OVER_THE_SCREEN_DRAGGABLE_PARENT_ID : 'body',
+        ALL_OVER_THE_SCREEN_DRAGGABLE_PARENT_ID: 'body',
 
         /*
          * META-INFORMATION ABOUT THE USER ACTION
@@ -31,28 +37,35 @@ define(['underscore', 'common/Constants'], function (underscore, COMMON_CONSTANT
         /*
          * LINE VISUAL DESCRIPTOR CONSTANTS
          */
-        LINE_STYLE : { WIDTH : 'width',
-                      COLOR: 'color',
-                      PATTERN: 'pattern',
-                      PATTERNS: { SOLID: '',
-                          DASH: "-",
-                          DOT: ".",
-                          DASH_DOT: "-.",
-                          DASH_DOT_DOT: "-.."},
-                      TYPE: 'type',
-                      TYPES: { NONE : '',
-                               BEZIER: 'bezier'},
-                      START_ARROW: 'start-arrow',
-                      END_ARROW: 'end-arrow',
-                      CUSTOM_POINTS: 'custom-points',
-                      LINE_ARROWS: { NONE: 'none',
-                            DIAMOND: 'diamond',
-                            BLOCK: 'block',
-                            CLASSIC: 'classic',
-                            OPEN: 'open',
-                            OVAL: 'oval',
-                            DIAMOND2: 'diamond2',
-                            INHERITANCE: 'inheritance'}
+        LINE_STYLE: {
+            WIDTH: 'width',
+            COLOR: 'color',
+            PATTERN: 'pattern',
+            PATTERNS: {
+                SOLID: '',
+                DASH: '-',
+                DOT: '.',
+                DASH_DOT: '-.',
+                DASH_DOT_DOT: '-..'
+            },
+            TYPE: 'type',
+            TYPES: {
+                NONE: '',
+                BEZIER: 'bezier'
+            },
+            START_ARROW: 'start-arrow',
+            END_ARROW: 'end-arrow',
+            CUSTOM_POINTS: 'custom-points',
+            LINE_ARROWS: {
+                NONE: 'none',
+                DIAMOND: 'diamond',
+                BLOCK: 'block',
+                CLASSIC: 'classic',
+                OPEN: 'open',
+                OVAL: 'oval',
+                DIAMOND2: 'diamond2',
+                INHERITANCE: 'inheritance'
+            }
         },
 
         DISPLAY_FORMAT_ATTRIBUTE_MARKER: '$',
@@ -71,7 +84,7 @@ define(['underscore', 'common/Constants'], function (underscore, COMMON_CONSTANT
         STATE_ACTIVE_CROSSCUT: 'activeCrosscut',
         STATE_IS_INIT_PHASE: 'isInitPhase',
 
-        /* ASPECTs */
+        /* ASPECTS */
         ASPECT_ALL: 'All',
 
         /* Property groups */
@@ -81,6 +94,7 @@ define(['underscore', 'common/Constants'], function (underscore, COMMON_CONSTANT
         PROPERTY_GROUP_POINTERS: 'Pointers'
     });
 
+    clientConstants.CLIENT = CLIENT_CONSTANTS;
 
-    return clientContants;
+    return clientConstants;
 });

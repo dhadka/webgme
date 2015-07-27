@@ -14,7 +14,7 @@ function throwTypeMiss(name, value, typeStr) {
     } else {
         msg = 'In configuration';
     }
-    msg +=  ': ' + name + ' must be a(n) ' + typeStr + '. Got: "' + value + '".';
+    msg += ': ' + name + ' must be a(n) ' + typeStr + '. Got: "' + value + '".';
     throw new Error(msg);
 }
 
@@ -50,13 +50,13 @@ function assertBoolean(name, value, orFalsy) {
 
 function assertArray(name, value) {
     'use strict';
-    if (value instanceof Array == false) {
+    if (value instanceof Array === false) {
         throwTypeMiss(name, value, 'array');
     }
 }
 
 // We will fail as early as possible
-function validateConfig (configOrFileName) {
+function validateConfig(configOrFileName) {
     'use strict';
     var config,
         errMsg,
@@ -134,6 +134,7 @@ function validateConfig (configOrFileName) {
     assertObject('config.plugin', config.plugin);
     assertBoolean('config.plugin.allowServerExecution', config.plugin.allowServerExecution);
     assertArray('config.plugin.basePaths', config.plugin.basePaths);
+    assertBoolean('config.plugin.displayAll', config.plugin.displayAll);
 
     // requirejsPaths
     expectedKeys.push('requirejsPaths');
@@ -156,12 +157,17 @@ function validateConfig (configOrFileName) {
     assertObject('config.server', config.server);
     assertNumber('config.server.port', config.server.port);
     assertNumber('config.server.maxWorkers', config.server.maxWorkers);
+    // server session store
+    assertObject('config.server.sessionStore', config.server.sessionStore);
+    assertString('config.server.sessionStore.type', config.server.sessionStore.type);
+    assertObject('config.server.sessionStore.options', config.server.sessionStore.options);
+
     assertString('config.server.sessionCookieId', config.server.sessionCookieId);
     assertString('config.server.sessionCookieSecret', config.server.sessionCookieSecret);
-        // server log
+    // server log
     assertObject('config.server.log', config.server.log);
     assertArray('config.server.log.transports', config.server.log.transports);
-        // server https
+    // server https
     assertObject('config.server.https', config.server.https);
     assertBoolean('config.server.https.enable', config.server.https.enable);
     assertString('config.server.https.certificateFile', config.server.https.certificateFile);
@@ -176,11 +182,11 @@ function validateConfig (configOrFileName) {
     expectedKeys.push('storage');
     assertObject('config.storage', config.storage);
     assertBoolean('config.storage.autoPersist', config.storage.autoPersist);
+    assertBoolean('config.storage.broadcastProjectEvents', config.storage.broadcastProjectEvents);
     assertNumber('config.storage.cache', config.storage.cache);
-    assertNumber('config.storage.failSafeFrequency', config.storage.failSafeFrequency);
-    assertNumber('config.storage.timeout', config.storage.timeout);
+    assertNumber('config.storage.loadBucketSize', config.storage.loadBucketSize);
+    assertNumber('config.storage.loadBucketTimer', config.storage.loadBucketTimer);
     assertString('config.storage.keyType', config.storage.keyType);
-    assertString('config.storage.failSafe', config.storage.failSafe);
 
     //visualization
     expectedKeys.push('visualization');

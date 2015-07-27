@@ -1,5 +1,5 @@
 /*globals require*/
-/*jshint node:true, mocha:true*/
+/*jshint node:true, mocha:true, expr:true*/
 /**
  * @author lattmann / https://github.com/lattmann
  */
@@ -10,34 +10,73 @@ describe('CoreTree', function () {
     'use strict';
 
     var gmeConfig = testFixture.getGmeConfig(),
+        Q = testFixture.Q,
         should = require('chai').should(),
+        expect = testFixture.expect,
         requirejs = require('requirejs'),
-
+        projectName = 'CoreTreeTest',
+        projectId = testFixture.projectName2Id(projectName),
         CoreTree = requirejs('common/core/coretree'),
 
-    // TODO: replace with in memory storage
+        logger = testFixture.logger.fork('coretree.spec'),
+        storage,
 
-        storage = new testFixture.Storage({globConf: gmeConfig}),
+        coreTree,
 
-        coreTree;
+        gmeAuth;
 
     before(function (done) {
-        storage.openDatabase(function (err) {
-            if (err) {
-                done(err);
-                return;
-            }
+        testFixture.clearDBAndGetGMEAuth(gmeConfig, projectName)
+            .then(function (gmeAuth_) {
+                gmeAuth = gmeAuth_;
+                storage = testFixture.getMemoryStorage(logger, gmeConfig, gmeAuth);
+                return storage.openDatabase();
+            })
+            .then(function () {
+                return storage.createProject({projectName: projectName});
+            })
+            .then(function (dbProject) {
+                var project = new testFixture.Project(dbProject, storage, logger, gmeConfig);
+                coreTree = new CoreTree(project, {
+                    globConf: gmeConfig,
+                    logger: testFixture.logger.fork('CoreTree:core')
+                });
+            })
+            .then(done)
+            .catch(done);
+    });
 
-            storage.openProject('CoreTreeTest', function (err, project) {
-                if (err) {
-                    done(err);
-                    return;
-                }
+    after(function (done) {
+        storage.deleteProject({projectId: projectId})
+            .then(function () {
+                return Q.allSettled([
+                    storage.closeDatabase(),
+                    gmeAuth.unload()
+                ]);
+            })
+            .nodeify(done);
+    });
 
-                coreTree = new CoreTree(project, {globConf: gmeConfig});
-                done();
-            });
-        });
+    it('should setData, getData, deleteData', function () {
+        var node = coreTree.createRoot(),
+            data = {
+                a: [],
+                b: true,
+                c: 'c',
+                d: 42
+            };
+
+        coreTree.setData(node, data);
+        expect(coreTree.getData(node)).to.deep.equal(data);
+        expect(coreTree.deleteData(node)).to.deep.equal(data);
+        expect(coreTree.getData(node)).to.deep.equal({});
+    });
+
+
+    it('should getDescendant', function () {
+        var node = coreTree.createRoot();
+
+        expect(coreTree.getDescendant(node, node, undefined /* base */)).to.deep.equal(node);
     });
 
     describe('core.getParent', function () {
@@ -121,8 +160,7 @@ describe('CoreTree', function () {
 
         it('should return with the path of the child', function () {
             var root = {parent: null, relid: null},
-                child = {parent: root, relid: '1'},
-                grandChild = {parent: child, relid: '2'};
+                child = {parent: root, relid: '1'};
 
             coreTree.getPath(child).should.be.equal('/1');
         });

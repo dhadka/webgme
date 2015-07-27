@@ -1,13 +1,15 @@
-/*globals requireJS*/
-/*jshint node:true*/
+/*globals requireJS, executorBackend*/
+/*jshint node: true, expr: true*/
 
 /**
  * @author lattmann / https://github.com/lattmann
  * @author ksmyth / https://github.com/ksmyth
  *
  curl http://localhost:8855/rest/executor/info/77704f10a36aa4214f5b0095ba8099e729a10f46
- curl -X POST -H "Content-Type: application/json" -d {} http://localhost:8855/rest/executor/create/77704f10a36aa4214f5b0095ba8099e729a10f46
- curl -X POST -H "Content-Type: application/json" -d {\"status\":\"CREATED\"} http://localhost:8855/rest/executor/update/77704f10a36aa4214f5b0095ba8099e729a10f46
+ curl -X POST -H "Content-Type: application/json"
+ -d {} http://localhost:8855/rest/executor/create/77704f10a36aa4214f5b0095ba8099e729a10f46
+ curl -X POST -H "Content-Type: application/json"
+ -d {\"status\":\"CREATED\"} http://localhost:8855/rest/executor/update/77704f10a36aa4214f5b0095ba8099e729a10f46
  */
 
 'use strict';
@@ -32,7 +34,7 @@ var jobListDBFile,
     labelJobsFilename,
     logger;
 
-function ExecutorRESTCreate(req, res, next) {
+function executorRESTCreate(req, res/*, next*/) {
     if (req.method !== 'POST') {
         res.sendStatus(405);
     }
@@ -40,91 +42,83 @@ function ExecutorRESTCreate(req, res, next) {
 
     if (url.length < 3 || !url[2]) {
         res.sendStatus(404);
-        return;
-    }
-    var hash = url[2];
-
-    var info = req.body;
-    info.hash = hash;
-    info.createTime = new Date().toISOString();
-    info.status = info.status || 'CREATED'; // TODO: define a constant for this
-    var jobInfo = new JobInfo(info);
-    // TODO: check if hash ok
-    jobList.find({hash: hash}, function (err, docs) {
-        if (err) {
-            logger.error('err');
-            res.sendStatus(500);
-        } else if (docs.length === 0) {
-            jobList.update({hash: hash}, jobInfo, {upsert: true}, function (err) {
-                if (err) {
-                    logger.error(err);
-                    res.sendStatus(500);
-                } else {
-                    delete jobInfo._id;
-                    res.send(jobInfo);
-                }
-            });
-        } else {
-            delete docs[0]._id;
-            res.send(docs[0]);
-        }
-    });
-
-    // TODO: get job description
-}
-
-function ExecutorRESTUpdate(req, res, next) {
-    if (req.method !== 'POST') {
-        res.sendStatus(405);
-    }
-    var url = req.url.split('/');
-
-    if (url.length < 3 || !url[2]) {
-        res.sendStatus(404);
-        return;
-    }
-    var hash = url[2];
-
-    if (hash) {
     } else {
-        logger.error('no hash given');
-        res.sendStatus(500);
-        return;
-    }
+        var hash = url[2];
 
-    jobList.find({hash: hash}, function (err, docs) {
-        if (err) {
-            logger.error(err);
-            res.sendStatus(500);
-        } else if (docs.length) {
-            var jobInfo = new JobInfo(docs[0]);
-            var jobInfoUpdate = new JobInfo(req.body);
-            jobInfoUpdate.hash = hash;
-            for (var i in jobInfoUpdate) {
-                if (jobInfoUpdate[i] !== null && (!(jobInfoUpdate[i] instanceof Array) ||
-                    jobInfoUpdate[i].length !== 0)) {
-
-                    jobInfo[i] = jobInfoUpdate[i];
-                }
+        var info = req.body;
+        info.hash = hash;
+        info.createTime = new Date().toISOString();
+        info.status = info.status || 'CREATED'; // TODO: define a constant for this
+        var jobInfo = new JobInfo(info);
+        // TODO: check if hash ok
+        jobList.find({hash: hash}, function (err, docs) {
+            if (err) {
+                logger.error('err');
+                res.sendStatus(500);
+            } else if (docs.length === 0) {
+                jobList.update({hash: hash}, jobInfo, {upsert: true}, function (err) {
+                    if (err) {
+                        logger.error(err);
+                        res.sendStatus(500);
+                    } else {
+                        delete jobInfo._id;
+                        res.send(jobInfo);
+                    }
+                });
+            } else {
+                delete docs[0]._id;
+                res.send(docs[0]);
             }
-            jobList.update({hash: hash}, jobInfo, function (err, numReplaced) {
-                if (err) {
-                    logger.error(err);
-                    res.sendStatus(500);
-                } else if (numReplaced !== 1) {
-                    res.sendStatus(404);
-                } else {
-                    res.sendStatus(200);
-                }
-            });
-        } else {
-            res.sendStatus(404);
-        }
-    });
+        });
 
+        // TODO: get job description
+    }
 }
 
-function ExecutorRESTWorkerGET(req, res, next) {
+function executorRESTUpdate(req, res/*, next*/) {
+    if (req.method !== 'POST') {
+        res.sendStatus(405);
+    }
+    var url = req.url.split('/');
+
+    if (url.length < 3 || !url[2]) {
+        res.sendStatus(404);
+    } else {
+        var hash = url[2];
+
+        jobList.find({hash: hash}, function (err, docs) {
+            if (err) {
+                logger.error(err);
+                res.sendStatus(500);
+            } else if (docs.length) {
+                var jobInfo = new JobInfo(docs[0]);
+                var jobInfoUpdate = new JobInfo(req.body);
+                jobInfoUpdate.hash = hash;
+                for (var i in jobInfoUpdate) {
+                    if (jobInfoUpdate[i] !== null && (!(jobInfoUpdate[i] instanceof Array) ||
+                                                      jobInfoUpdate[i].length !== 0)) {
+
+                        jobInfo[i] = jobInfoUpdate[i];
+                    }
+                }
+                jobList.update({hash: hash}, jobInfo, function (err, numReplaced) {
+                    if (err) {
+                        logger.error(err);
+                        res.sendStatus(500);
+                    } else if (numReplaced !== 1) {
+                        res.sendStatus(404);
+                    } else {
+                        res.sendStatus(200);
+                    }
+                });
+            } else {
+                res.sendStatus(404);
+            }
+        });
+    }
+}
+
+function executorRESTWorkerGET(req, res/*, next*/) {
     var response = {};
     workerList.find({}, function (err, workers) {
         var jobQuery = function (i) {
@@ -152,22 +146,16 @@ function ExecutorRESTWorkerGET(req, res, next) {
     });
 }
 
-function ExecutorRESTWorkerAPI(req, res, next) {
+function executorRESTWorkerAPI(req, res, next) {
     if (req.method !== 'POST' && req.method !== 'GET') {
         res.sendStatus(405);
         return;
     }
     if (req.method === 'GET') {
-        return ExecutorRESTWorkerGET(req, res, next);
+        return executorRESTWorkerGET(req, res, next);
     }
 
     var url = require('url').parse(req.url);
-    var pathParts = url.pathname.split('/');
-
-    if (pathParts.length < 2) {
-        res.sendStatus(404);
-        return;
-    }
 
     var serverResponse = new WorkerInfo.ServerResponse({refreshPeriod: workerRefreshInterval});
     serverResponse.labelJobs = labelJobs;
@@ -219,7 +207,7 @@ function ExecutorRESTWorkerAPI(req, res, next) {
     });
 }
 
-function ExecutorRESTCancel(req, res, next) {
+function executorRESTCancel(req, res/*, next*/) {
     if (req.method !== 'POST') {
         res.sendStatus(405);
         return;
@@ -230,23 +218,22 @@ function ExecutorRESTCancel(req, res, next) {
     if (url.length < 3 || !url[2]) {
         logger.error('ExecutorRESTCancel wrong format of url', url);
         res.sendStatus(500);
-        return;
-    }
-
-    var hash = url[2];
-
-    if (false) {
-        // TODO
-        executorBackend.cancelJob(hash);
-
-        res.sendStatus(200);
     } else {
-        res.sendStatus(500);
+        var hash = url[2];
+
+        if (false) {
+            // TODO
+            executorBackend.cancelJob(hash);
+
+            res.sendStatus(200);
+        } else {
+            res.sendStatus(500);
+        }
     }
 
 }
 
-function ExecutorRESTInfo(req, res, next) {
+function executorRESTInfo(req, res/*, next*/) {
     if (req.method !== 'GET') {
         res.sendStatus(405);
         return;
@@ -257,12 +244,9 @@ function ExecutorRESTInfo(req, res, next) {
     if (url.length < 3 || !url[2]) {
         logger.error('ExecutorRESTInfo wrong format of url', url);
         res.sendStatus(500);
-        return;
-    }
+    } else {
+        var hash = url[2];
 
-    var hash = url[2];
-
-    if (hash) {
         jobList.find({hash: hash}, function (err, docs) {
             if (err) {
                 logger.error(err);
@@ -273,13 +257,10 @@ function ExecutorRESTInfo(req, res, next) {
                 res.sendStatus(404);
             }
         });
-    } else {
-        logger.error('hash not given');
-        res.sendStatus(500);
     }
 }
 
-function ExecutorREST(req, res, next) {
+function executorREST(req, res, next) {
 
     var authenticate = function () {
         var isAuth = true,
@@ -301,11 +282,6 @@ function ExecutorREST(req, res, next) {
 
     var url = require('url').parse(req.url);
     var pathParts = url.pathname.split('/');
-
-    if (pathParts.length < 2) {
-        res.sendStatus(404);
-        return;
-    }
 
     if (pathParts.length === 2 && pathParts[1] === '') {
         //next should be always called / the response should be sent otherwise this thread will stop without and end
@@ -341,19 +317,19 @@ function ExecutorREST(req, res, next) {
 
         switch (pathParts[1]) {
             case 'create':
-                authenticate() && ExecutorRESTCreate(req, res, next);
+                authenticate() && executorRESTCreate(req, res, next);
                 break;
             case 'worker':
-                (req.method !== 'POST' || authenticate()) && ExecutorRESTWorkerAPI(req, res, next);
+                (req.method !== 'POST' || authenticate()) && executorRESTWorkerAPI(req, res, next);
                 break;
             case 'cancel':
-                authenticate() && ExecutorRESTCancel(req, res, next);
+                authenticate() && executorRESTCancel(req, res, next);
                 break;
             case 'info':
-                ExecutorRESTInfo(req, res, next);
+                executorRESTInfo(req, res, next);
                 break;
             case 'update':
-                authenticate() && ExecutorRESTUpdate(req, res, next);
+                authenticate() && executorRESTUpdate(req, res, next);
                 break;
             default:
                 res.sendStatus(404);
@@ -375,7 +351,7 @@ function workerTimeout() {
     workerList.find(query, function (err, docs) {
         for (var i = 0; i < docs.length; i += 1) {
             // reset unfinished jobs assigned to worker to CREATED, so they'll be executed by someone else
-            logger.info('worker "' + docs[i].clientId + '" is gone');
+            logger.debug('worker "' + docs[i].clientId + '" is gone');
             workerList.remove({_id: docs[i]._id});
             // FIXME: race after assigning finishTime between this and uploading to blob
             jobList.update({worker: docs[i].clientId, finishTime: null}, {
@@ -392,7 +368,7 @@ function workerTimeout() {
 
 function updateLabelJobs() {
     fs.readFile(labelJobsFilename, {encoding: 'utf-8'}, function (err, data) {
-        logger.info('Reading ' + labelJobsFilename);
+        logger.debug('Reading ' + labelJobsFilename);
         labelJobs = JSON.parse(data);
     });
 }
@@ -417,7 +393,7 @@ function createExpressExecutor(__app, baseUrl, options) {
 
     gmeConfig = options.gmeConfig;
 
-    logger = options.logger.fork('ExecutorServer');
+    logger = options.logger.fork('middleware:ExecutorServer');
     logger.debug('output directory', gmeConfig.executor.outputDir);
     mkdirp.sync(gmeConfig.executor.outputDir);
 
@@ -439,7 +415,7 @@ function createExpressExecutor(__app, baseUrl, options) {
         }
     });
 
-    __app.use(baseUrl, ExecutorREST); //TODO: This can be nicer integrated (see BlobServer).
+    __app.use(baseUrl, executorREST); //TODO: This can be nicer integrated (see BlobServer).
 }
 
 module.exports.createExpressExecutor = createExpressExecutor;

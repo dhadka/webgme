@@ -1,6 +1,9 @@
-/*globals define*/
+/*globals define, escape*/
 /*jshint browser: true, node:true*/
-/*
+
+/**
+ * Client module for accessing the blob.
+ *
  * @author lattmann / https://github.com/lattmann
  * @author ksmyth / https://github.com/ksmyth
  */
@@ -16,12 +19,9 @@ define(['blob/Artifact', 'blob/BlobMetadata', 'superagent'], function (Artifact,
             this.serverPort = parameters.serverPort || this.serverPort;
             this.httpsecure = (parameters.httpsecure !== undefined) ? parameters.httpsecure : this.httpsecure;
             this.webgmeclientsession = parameters.webgmeclientsession;
-            this.keepaliveAgentOptions = parameters.keepaliveAgentOptions || {
-                maxSockets: 100,
-                maxFreeSockets: 10,
-                timeout: 60000,
-                keepAliveTimeout: 30000 // free socket keep alive for 30 seconds
-            };
+            this.keepaliveAgentOptions = parameters.keepaliveAgentOptions || { /* use defaults */ };
+        } else {
+            this.keepaliveAgentOptions = { /* use defaults */ };
         }
         this.blobUrl = '';
         if (this.httpsecure !== undefined && this.server && this.serverPort) {
@@ -38,6 +38,9 @@ define(['blob/Artifact', 'blob/BlobMetadata', 'superagent'], function (Artifact,
                 this.Agent = require('agentkeepalive').HttpsAgent;
             } else {
                 this.Agent = require('agentkeepalive');
+            }
+            if (this.keepaliveAgentOptions.hasOwnProperty('ca') === false) {
+                this.keepaliveAgentOptions.ca = require('https').globalAgent.options.ca;
             }
             this.keepaliveAgent = new this.Agent(this.keepaliveAgentOptions);
         }
@@ -79,6 +82,7 @@ define(['blob/Artifact', 'blob/BlobMetadata', 'superagent'], function (Artifact,
     BlobClient.prototype.putFile = function (name, data, callback) {
         var contentLength,
             req;
+
         function toArrayBuffer(buffer) {
             var ab = new ArrayBuffer(buffer.length);
             var view = new Uint8Array(ab);
@@ -87,7 +91,9 @@ define(['blob/Artifact', 'blob/BlobMetadata', 'superagent'], function (Artifact,
             }
             return ab;
         }
-        // on node-webkit, we use XMLHttpRequest, but xhr.send thinks a Buffer is a string and encodes it in utf-8. Send an ArrayBuffer instead
+
+        // On node-webkit, we use XMLHttpRequest, but xhr.send thinks a Buffer is a string and encodes it in utf-8 -
+        // send an ArrayBuffer instead.
         if (typeof window !== 'undefined' && typeof Buffer !== 'undefined' && data instanceof Buffer) {
             data = toArrayBuffer(data); // FIXME will this have performance problems
         }
@@ -100,15 +106,17 @@ define(['blob/Artifact', 'blob/BlobMetadata', 'superagent'], function (Artifact,
         contentLength = data.hasOwnProperty('length') ? data.length : data.byteLength;
         req = superagent.post(this.getCreateURL(name));
 
-        if (this.isNodeOrNodeWebKit) {
+        if (typeof window === 'undefined') {
             req.agent(this.keepaliveAgent);
         }
 
         if (this.webgmeclientsession) {
             req.set('webgmeclientsession', this.webgmeclientsession);
         }
+        if (typeof data !== 'string' && !(data instanceof String)) {
+            req.set('Content-Length', contentLength);
+        }
         req.set('Content-Type', 'application/octet-stream')
-            .set('Content-Length', contentLength)
             .send(data)
             .end(function (err, res) {
                 if (err || res.status > 399) {
@@ -141,7 +149,7 @@ define(['blob/Artifact', 'blob/BlobMetadata', 'superagent'], function (Artifact,
             req.set('webgmeclientsession', this.webgmeclientsession);
         }
 
-        if (this.isNodeOrNodeWebKit) {
+        if (typeof window === 'undefined') {
             req.agent(this.keepaliveAgent);
         }
 
@@ -171,7 +179,7 @@ define(['blob/Artifact', 'blob/BlobMetadata', 'superagent'], function (Artifact,
         if (remaining === 0) {
             callback(null, hashes);
         }
-        putFile = function(filename, data) {
+        putFile = function (filename, data) {
             self.putFile(filename, data, function (err, hash) {
                 remaining -= 1;
 
@@ -211,7 +219,7 @@ define(['blob/Artifact', 'blob/BlobMetadata', 'superagent'], function (Artifact,
             req.set('webgmeclientsession', this.webgmeclientsession);
         }
 
-        if (this.isNodeOrNodeWebKit) {
+        if (typeof window === 'undefined') {
             req.agent(this.keepaliveAgent);
         }
 
@@ -226,7 +234,7 @@ define(['blob/Artifact', 'blob/BlobMetadata', 'superagent'], function (Artifact,
             };
             require('util').inherits(BuffersWritable, Writable);
 
-            BuffersWritable.prototype._write = function(chunk, encoding, callback) {
+            BuffersWritable.prototype._write = function (chunk, encoding, callback) {
                 this.buffers.push(chunk);
                 callback();
             };
@@ -250,7 +258,7 @@ define(['blob/Artifact', 'blob/BlobMetadata', 'superagent'], function (Artifact,
                 }
             });
             // req.on('error', callback);
-            req.on('end', function() {
+            req.on('end', function () {
                 if (req.xhr.status > 399) {
                     callback(req.xhr.status);
                 } else {
@@ -280,7 +288,7 @@ define(['blob/Artifact', 'blob/BlobMetadata', 'superagent'], function (Artifact,
             req.set('webgmeclientsession', this.webgmeclientsession);
         }
 
-        if (this.isNodeOrNodeWebKit) {
+        if (typeof window === 'undefined') {
             req.agent(this.keepaliveAgent);
         }
 
@@ -330,7 +338,7 @@ define(['blob/Artifact', 'blob/BlobMetadata', 'superagent'], function (Artifact,
             callback(null, hashes);
         }
 
-        saveCallback = function(err, hash) {
+        saveCallback = function (err, hash) {
             remaining -= 1;
 
             hashes.push(hash);

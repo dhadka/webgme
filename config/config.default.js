@@ -13,8 +13,8 @@ var path = require('path'),
 
         authentication: {
             enable: false,
-            allowGuests: false,
-            guestAccount: 'anonymous',
+            allowGuests: true,
+            guestAccount: 'guest',
             logOutUrl: '/',
             salts: 10
         },
@@ -77,19 +77,20 @@ var path = require('path'),
             options: {
                 db: {
                     w: 1,
-                    native_parser: true
+                    native_parser: true // jshint ignore: line
                 },
                 server: {
-                    auto_reconnect: true,
-                    socketOptions: {keepAlive: 1},
-                    poolSize: 20
+                    auto_reconnect: true, // jshint ignore: line
+                    socketOptions: {keepAlive: 1}
+                    //poolSize: 5 // default pool size is 5
                 }
             }
         },
 
         plugin: {
             allowServerExecution: false,
-            basePaths: [path.join(__dirname, '../src/plugin/coreplugins')]
+            basePaths: [path.join(__dirname, '../src/plugin/coreplugins')],
+            displayAll: false
         },
 
         requirejsPaths: {},
@@ -108,6 +109,13 @@ var path = require('path'),
         server: {
             port: 8888,
             maxWorkers: 10,
+            sessionStore: {
+                type: 'Memory', // Memory, Redis, Mongo, options will be passed to the specified storage
+                // see specific session store documentations for options connect-mongo and connect-redis
+                options: {
+                    //url: 'mongodb://127.0.0.1:27017/multi'
+                }
+            },
             sessionCookieId: 'webgmeSid',
             sessionCookieSecret: 'meWebGMEez',
             log: {
@@ -116,7 +124,7 @@ var path = require('path'),
                     transportType: 'Console',
                     //patterns: ['gme:server:*', '-gme:server:worker*'], // ['gme:server:worker:*'], ['gme:server:*', '-gme:server:worker*']
                     options: {
-                        level: 'info',
+                        level: 'info', // Set this back to info when merged
                         colorize: true,
                         timestamp: true,
                         prettyPrint: true,
@@ -150,21 +158,23 @@ var path = require('path'),
         },
 
         socketIO: {
-            reconnection: false,
+            reconnection: true,
             'connect timeout': 10,
             'reconnection delay': 1,
             'force new connection': true,
-            transports: ['websocket']
+            transports: ['websocket', 'polling']
         },
 
         storage: {
             autoPersist: true, // core setting
             cache: 2000,
+            // If true events such as PROJECT_CREATED and BRANCH_CREATED will only be broadcasted
+            // and not emitted back to the web-socket that triggered the event.
+            broadcastProjectEvents: false,
+            loadBucketSize: 100,
+            loadBucketTimer: 10,
             clientCacheSize: 2000, // overwrites cache on client
-            keyType: 'plainSHA1', // 'rand160Bits', 'ZSSHA', 'plainSHA1',
-            failSafe: 'memory',
-            failSafeFrequency: 10000,
-            timeout: 10000
+            keyType: 'plainSHA1' // 'rand160Bits', 'ZSSHA', 'plainSHA1',
         },
 
         visualization: {

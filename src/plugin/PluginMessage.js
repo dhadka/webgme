@@ -1,11 +1,16 @@
-/*
- * Copyright (C) 2014 Vanderbilt University, All rights reserved.
+/*globals define*/
+/*jshint browser: true, node:true*/
+
+/**
+ * A module representing a PluginMessage.
  *
- * Author: Zsolt Lattmann
+ * @module PluginMessage
+ * @author lattmann / https://github.com/lattmann
  */
 
-'use strict';
+
 define(['plugin/PluginNodeDescription'], function (PluginNodeDescription) {
+    'use strict';
 
     /**
      * Initializes a new instance of plugin message.
@@ -14,6 +19,7 @@ define(['plugin/PluginNodeDescription'], function (PluginNodeDescription) {
      *
      * @param config - deserializes an existing configuration to this object.
      * @constructor
+     * @alias PluginMessage
      */
     var PluginMessage = function (config) {
         if (config) {
